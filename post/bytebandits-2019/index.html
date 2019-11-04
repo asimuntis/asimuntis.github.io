@@ -267,15 +267,15 @@ pwned</code></pre></div>
 
 <p>By visiting the chall url we can find something that seems to be the <code>web proxy</code>:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/web2.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/web2.png" alt="" /></p>
 
 <p>There is a hint in the html code:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/web1.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/web1.png" alt="" /></p>
 
 <p>Basically, we need to do SSRF to get the flag. Problem is that any reference to localhost is being filtered by the web app:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/web3.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/web3.png" alt="" /></p>
 
 <p>After trying quite a few payloads, such as transforming <code>127.0.0.1</code> into integer, injecting known bypasses such as <code>0://evil.com:80,google.com:80/</code> or trying some php filters; the results were not promising. Then I realised that since I can point that proxy anywhere, I could try to use the redirection (301,302).</p>
 
@@ -293,7 +293,7 @@ Press Ctrl-C to quit.
 <span style="color:#f92672">[</span>Fri Apr <span style="color:#ae81ff">12</span> <span style="color:#ae81ff">22</span>:50:03 <span style="color:#ae81ff">2019</span><span style="color:#f92672">]</span> <span style="color:#ae81ff">35</span>.154.144.251:58234 <span style="color:#f92672">[</span><span style="color:#ae81ff">301</span><span style="color:#f92672">]</span>: /</code></pre></div>
 <p>and..</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/web4.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/web4.png" alt="" /></p>
 
 <h2 id="online-previewer-2">Online Previewer 2</h2>
 
@@ -308,7 +308,7 @@ Press Ctrl-C to quit.
 <span style="color:#f92672">[</span>~<span style="color:#f92672">]</span>$ </code></pre></div>
 <p>After few tryouts I was able to recover the flag:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/web5.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/web5.png" alt="" /></p>
 
 <h2 id="bash-fu">Bash-fu</h2>
 

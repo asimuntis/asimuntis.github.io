@@ -136,7 +136,7 @@ Let&rsquo;s verify it with ltrace:
 <p><br>
 Challenge binary takes input from the user; performs single byte <code>xor</code> with <code>0x3c</code> key and then compares with the hardcoded string.</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/onebite.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/onebite.png" alt="" /></p>
 
 <p>Let&rsquo;s verify it with <code>ltrace</code>:</p>
 
@@ -175,7 +175,7 @@ flag<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;&#34;</
 
 <p>Let&rsquo;s fire IDA free and check the binary:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/likeit1.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/likeit1.png" alt="" /></p>
 
 <p>To pass the first check we have to input the <code>okrrrrrrr</code> string:</p>
 
@@ -188,11 +188,11 @@ I like two integers that I'm thinking of (space separated):
 
 <p>To pass next check we have to provide two integers and their sum must equal to <code>0x88</code> (136 decimal):</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/likeit3.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/likeit3.png" alt="" /></p>
 
 <p>Furthermore, regarding to:</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/likeit4.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/likeit4.png" alt="" /></p>
 
 <p>The multiplication result of the provided integers must equal to <code>0x0EC7</code> (3783 decimal).<br>
 We just have to find two integers which add up to <code>0x88</code> and the product of their multiplication is equal to <code>0x0EC7</code>.<br></p>
@@ -229,7 +229,7 @@ Flag: actf{okrrrrrrr_39_97}
 <p><br>
 The binary performs multiple checks on our input; instead of going through all the checks we can use angr framework<sup class="footnote-ref" id="fnref:1"><a href="#fn:1">1</a></sup> to automate this task and reach <code>0x400ACB</code>.</p>
 
-<p><img src="https://asimuntis.github.io/posts/static/high.png" alt="" /></p>
+<p><img src="https://asimuntis.github.io/post/static/high.png" alt="" /></p>
 
 <p>Solution:</p>
 <div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> angr
