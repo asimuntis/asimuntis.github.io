@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Hackthebox on </title>
+    <link>https://asimuntis.github.io/tags/hackthebox/</link>
+    <description>Recent content in Hackthebox on </description>
+    <generator>Hugo -- gohugo.io</generator>
+    <lastBuildDate>Sat, 13 Apr 2019 00:00:00 +0000</lastBuildDate>
+    
+	<atom:link href="https://asimuntis.github.io/tags/hackthebox/index.xml" rel="self" type="application/rss+xml" />
+    
+    
+    <item>
+      <title>HTB Redcross local root (basic rop)</title>
+      <link>https://asimuntis.github.io/post/htb-redcross-local-root/</link>
+      <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
+      
+      <guid>https://asimuntis.github.io/post/htb-redcross-local-root/</guid>
+      <description>Warmup post about the alternative way of rooting the Redcross box.
+Target binary:
+iptctl: setuid, setgid ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, not stripped &amp;gt; source was also available on the host: /var/jail/home/public/src/iptctl.c  Ideally we could easily reach the vulnerable part of the code:
+if(argc==2){ if(strstr(argv[1],&amp;#34;-i&amp;#34;)) interactive(inputAddress, inputAction, argv[0]); } else{ strcpy(inputAction, argv[1]); strcpy(inputAddress, argv[2]); } ..but let&amp;rsquo;s pick the other way.
+recon The interactive() function looks interesting:</description>
+    </item>
+    
+  </channel>
+</rss>
