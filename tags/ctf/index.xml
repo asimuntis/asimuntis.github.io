@@ -12,10 +12,10 @@
     
     <item>
       <title>ångstromCTF 2019</title>
-      <link>https://asimuntis.github.io/post/angstromctf-2019/</link>
+      <link>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</link>
       <pubDate>Thu, 25 Apr 2019 00:00:00 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/angstromctf-2019/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</guid>
       <description>Reversing: One Bite [40pts] 
 Challenge binary takes input from the user; performs single byte xor with 0x3c key and then compares with the hardcoded string.
 Let&amp;rsquo;s verify it with ltrace:
@@ -24,10 +24,10 @@ Let&amp;rsquo;s verify it with ltrace:
     
     <item>
       <title>ByteBandits CTF 2019</title>
-      <link>https://asimuntis.github.io/post/bytebandits-2019/</link>
+      <link>https://asimuntis.github.io/posts/2019/04/bytebandits-ctf-2019/</link>
       <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/bytebandits-2019/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/04/bytebandits-ctf-2019/</guid>
       <description>First part of writeups for the Byte Bandits CTF 2019.
 RivestShamirAdleman We are given the following data:
 n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 e = 3 ciphertext = 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333  It&amp;rsquo;s a basic RSA challenge with small public exponent (e=3) and lack of proper padding. Even though n is chosen from strong primes and it&amp;rsquo;s quite big, it is still possible to break it.
@@ -36,10 +36,10 @@ All we need to do is to compute the third root of C (ciphertext) to get the plai
     
     <item>
       <title>HTB Redcross local root (basic rop)</title>
-      <link>https://asimuntis.github.io/post/htb-redcross-local-root/</link>
+      <link>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</link>
       <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/htb-redcross-local-root/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</guid>
       <description>Warmup post about the alternative way of rooting the Redcross box.
 Target binary:
 iptctl: setuid, setgid ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, not stripped &amp;gt; source was also available on the host: /var/jail/home/public/src/iptctl.c  Ideally we could easily reach the vulnerable part of the code:

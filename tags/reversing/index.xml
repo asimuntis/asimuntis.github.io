@@ -12,10 +12,10 @@
     
     <item>
       <title>ångstromCTF 2019</title>
-      <link>https://asimuntis.github.io/post/angstromctf-2019/</link>
+      <link>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</link>
       <pubDate>Thu, 25 Apr 2019 00:00:00 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/angstromctf-2019/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</guid>
       <description>Reversing: One Bite [40pts] 
 Challenge binary takes input from the user; performs single byte xor with 0x3c key and then compares with the hardcoded string.
 Let&amp;rsquo;s verify it with ltrace:

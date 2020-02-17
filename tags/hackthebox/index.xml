@@ -12,10 +12,10 @@
     
     <item>
       <title>HTB Redcross local root (basic rop)</title>
-      <link>https://asimuntis.github.io/post/htb-redcross-local-root/</link>
+      <link>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</link>
       <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/htb-redcross-local-root/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</guid>
       <description>Warmup post about the alternative way of rooting the Redcross box.
 Target binary:
 iptctl: setuid, setgid ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, not stripped &amp;gt; source was also available on the host: /var/jail/home/public/src/iptctl.c  Ideally we could easily reach the vulnerable part of the code:

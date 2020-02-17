@@ -12,10 +12,10 @@
     
     <item>
       <title>Hack.Lu CTF 2019: Baby kernel 2</title>
-      <link>https://asimuntis.github.io/post/hack-lu-ctf-2019-baby-kernel-2/</link>
+      <link>https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</link>
       <pubDate>Tue, 29 Oct 2019 20:38:02 +0000</pubDate>
       
-      <guid>https://asimuntis.github.io/post/hack-lu-ctf-2019-baby-kernel-2/</guid>
+      <guid>https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</guid>
       <description>Baby Kernel 2 - pwn , 202 pts, solves: 68 
 This post is a follow up to a quick writeup that I&amp;rsquo;ve posted on my github.
 We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.

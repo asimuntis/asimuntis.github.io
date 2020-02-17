@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+  xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  
+  <url>
+    <loc>http://localhost:8888/posts/2019/11/my-first-post/</loc>
+    <lastmod>2019-11-03T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/posts/2019/10/hack.lu-ctf-2019-baby-kernel-2/</loc>
+    <lastmod>2019-10-29T20:38:02+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/posts/2019/04/%C3%A5ngstromctf-2019/</loc>
+    <lastmod>2019-04-25T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/posts/2019/04/bytebandits-ctf-2019/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/posts/2019/04/htb-redcross-local-root-basic-rop/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/</loc>
+    <lastmod>2019-11-03T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+    <xhtml:link
+                rel="alternate"
+                hreflang="fr"
+                href="http://localhost:8888/fr/"
+                />
+    <xhtml:link
+                rel="alternate"
+                hreflang="en"
+                href="http://localhost:8888/"
+                />
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/categories/</loc>
+    <priority>0</priority>
+    <xhtml:link
+                rel="alternate"
+                hreflang="fr"
+                href="http://localhost:8888/fr/categories/"
+                />
+    <xhtml:link
+                rel="alternate"
+                hreflang="en"
+                href="http://localhost:8888/categories/"
+                />
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/crypto/</loc>
+    <lastmod>2019-04-25T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/ctf/</loc>
+    <lastmod>2019-04-25T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/categories/ctf/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/categories/exploitation/</loc>
+    <lastmod>2019-10-29T20:38:02+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/hackthebox/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/kernel/</loc>
+    <lastmod>2019-10-29T20:38:02+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/misc/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/posts/</loc>
+    <lastmod>2019-11-03T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/pwn/</loc>
+    <lastmod>2019-10-29T20:38:02+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/reversing/</loc>
+    <lastmod>2019-04-25T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/</loc>
+    <lastmod>2019-04-25T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+    <xhtml:link
+                rel="alternate"
+                hreflang="fr"
+                href="http://localhost:8888/fr/tags/"
+                />
+    <xhtml:link
+                rel="alternate"
+                hreflang="en"
+                href="http://localhost:8888/tags/"
+                />
+  </url>
+  
+  <url>
+    <loc>http://localhost:8888/tags/web/</loc>
+    <lastmod>2019-04-13T00:00:00+00:00</lastmod>
+    <priority>0</priority>
+  </url>
+  
+</urlset>
