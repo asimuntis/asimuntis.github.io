@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="B_-ZMaSKIKALjwlncbeuol3oMAFud2aTqj2W2kJ8FlY">
   
   <meta name="robots" content="index, follow">
   
@@ -47,27 +48,19 @@ backend. On SUSE, that&rsquo;s ZYpp. I wanted to see whether ZYpp stayed within 
 operation PackageKit had allowed. It didn&rsquo;t: I found two ways to make them
 disagree.</p>
 <p>The first bug was a signed-package rollback. An active desktop user could
-submit the exact ID of an older signed package as a normal update. PackageKit
-authorized <code>system-update</code>; ZYpp installed the older edition as root. SUSE
-PSIRT assigned
-<a href="https://www.suse.com/security/cve/CVE-2026-104619.html">CVE-2026-104619</a>.
-The rollback alone was useful, but I still needed a vulnerable package to get
-a root shell. A kernel would have added a reboot; PackageKit itself was a
-much nicer target. An older signed build was affected by public
+submit an older signed package as a normal update: PackageKit authorized
+<code>system-update</code>, then ZYpp installed it as root. SUSE PSIRT assigned
+<a href="https://www.suse.com/security/cve/CVE-2026-104619.html">CVE-2026-104619</a>. I
+used it to roll PackageKit back to a build affected by public
 <a href="https://github.com/PackageKit/PackageKit/security/advisories/GHSA-f55j-vvr9-69xv">CVE-2026-41651</a>,
-so the whole chain stayed rebootless. The older daemon
-installed a small RPM whose <code>%post</code> ran as root, giving me a root shell on
-fully updated openSUSE Leap 16.0 and SLED 15 SP7 VMs in October 2026.</p>
-<p>The second bug let a regular user choose where PackageKit copied an RPM as
-root, even though the transaction was only a simulation. PackageKit skips
-authorization for the simulation, but ZYpp still copies the RPM. Its destination
-contains the untrusted RPM <code>Name</code>, so
-<code>..</code> components escape the staging directory. This one got
-<a href="https://www.suse.com/security/cve/CVE-2026-104620.html">CVE-2026-104620</a> from
-SUSE PSIRT.
-libzypp supplied the last hop for free: after <code>GetUpdates</code> successfully
-refreshes an enabled repository, its appdata loader scans a root-owned plugin
-directory and runs executable files as root.</p>
+then installed a small RPM whose <code>%post</code> opened a root shell. The chain was
+rebootless on fully updated openSUSE Leap 16.0 and SLED 15 SP7 VMs.</p>
+<p>The second bug made <code>InstallFiles(SIMULATE)</code> copy an RPM as root without
+authorization. The RPM <code>Name</code> controlled the destination, so <code>..</code> escaped the
+staging directory. SUSE PSIRT assigned
+<a href="https://www.suse.com/security/cve/CVE-2026-104620.html">CVE-2026-104620</a>. A
+successful <code>GetUpdates</code> refresh then made libzypp execute the planted RPM from
+its appdata plugin directory as root.</p>
 <p>For the second chain, all I needed was a regular SSH account. It went straight
 to root without a desktop session, sudo, a reboot or installing a package. This
 is what I reproduced on the builds I tested in October 2026:</p>
@@ -195,17 +188,13 @@ CVE-2026-41651 is the second stage, not the cause of the rollback.</p>
 </span></span></span><span style="display:flex;"><span><span style="color:#8b949e">bash-5.2# head -n2 /etc/shadow
 </span></span></span><span style="display:flex;"><span><span style="color:#8b949e">root:!:20730::::::
 </span></span></span><span style="display:flex;"><span><span style="color:#8b949e">ftp:!:20730::::::
-</span></span></span></code></pre></div><p>I reproduced the same rollback on a registered SLED 15 SP7 GNOME VM, from
-<code>.4.17.1</code> to signed <code>.4.8.2</code>. SLES 15 SP7 GNOME behaved differently: its
-polkit profile required administrator authentication for <code>system-update</code>, so
-the request stopped before ZYpp ran.</p>
-<p>Tumbleweed was not affected by this rollback bug. PackageKit returned
-success, but nothing was downgraded. Its backend checks <code>is_tumbleweed()</code> and
-calls <code>upgrade_system()</code> before reaching the package-ID loop
+</span></span></span></code></pre></div><p>Tumbleweed dodged this one because its backend takes a different branch.
+<code>is_tumbleweed()</code> sends the transaction to <code>upgrade_system()</code> and returns
+before the package-ID loop
 (<a href="https://github.com/PackageKit/PackageKit/blob/16c3c84ab4c498cefe1668314c9efc04e0c172ab/backends/zypp/pk-backend-zypp.cpp#L3579-L3585">PackageKit v1.4.0, <code>pk-backend-zypp.cpp:3579-3585</code></a>).
-To make sure the old package was not the reason, I installed it with Zypper.
-That worked. PackageKit never reached the requested ID; the Tumbleweed branch
-sent the request through a full distribution upgrade instead.</p>
+PackageKit reported success, but never even looked at the requested older ID.
+Zypper installed the same build without complaint, so the package wasn&rsquo;t the
+problem; PackageKit had simply ignored the request.</p>
 <h2 id="cve-2026-104620-simulate-still-copies-the-rpm">CVE-2026-104620: <code>SIMULATE</code> still copies the RPM</h2>
 <p>The second bug starts elsewhere and needs none of that rollback chain. A real
 installation of an unsigned local RPM maps to
@@ -304,11 +293,9 @@ no scriptlets and is never installed.</p>
 <p>libzypp only runs files that root can execute.
 <code>/bin/cp --remove-destination</code> kept the RPM&rsquo;s mode, so a <code>0644</code> payload landed
 as root but stopped at <code>userMayRX()</code>. Since the attacker owns the source RPM,
-making it executable is one command:</p>
-<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>chmod <span style="color:#a5d6ff">0755</span> payload.rpm
-</span></span></code></pre></div><p>My first pass dropped a setuid shell in <code>/tmp</code>. On my Tumbleweed VM, <code>/tmp</code> was
-mounted <code>nosuid</code>, so the file landed but the setuid bit bought me nothing. I
-could write it elsewhere, but that made the PoC needlessly dependent on the
+<code>chmod 0755 payload.rpm</code> is enough.</p>
+<p>A setuid shell in <code>/tmp</code> was a dead end on Tumbleweed because <code>/tmp</code> was
+mounted <code>nosuid</code>. Moving it elsewhere would only make the PoC depend on the
 target&rsquo;s mount layout.</p>
 <p>With the payload ready, I can pop a root shell like this:</p>
 <ul>
@@ -337,6 +324,6 @@ in <code>/tmp</code>.</li>
 
   </main>
 
-  <footer><a href="https://x.com/adamsimuntis">adamm</a> · <span title="OpenPGP fingerprint: 1A0B 81CA 0A51 943E 2188 8D4D AD12 9DEF 055A E3F6" aria-label="OpenPGP key AD129DEF055AE3F6">AD129DEF055AE3F6</span></footer>
+  <footer><a href="https://x.com/adamsimuntis">adamm</a> · <a href="https://keys.openpgp.org/vks/v1/by-fingerprint/1A0B81CA0A51943E21888D4DAD129DEF055AE3F6" type="application/pgp-keys" title="OpenPGP fingerprint: 1A0B 81CA 0A51 943E 2188 8D4D AD12 9DEF 055A E3F6" aria-label="Download Adam Simuntis's OpenPGP public key">PGP AD129DEF055AE3F6</a></footer>
 </body>
 </html>
