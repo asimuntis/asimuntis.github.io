@@ -3,7 +3,34 @@
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://asimuntis.github.io/</loc>
-    <lastmod>2026-11-10T00:00:00+00:00</lastmod>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/cve-2026-123177/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/dbus/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/dnf5/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/fedora/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/linux/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/posts/fedora-dnf5daemon-root-file-read/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/polkit/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/posts/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://asimuntis.github.io/tags/</loc>
+    <lastmod>2026-11-14T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://asimuntis.github.io/tags/cve-2026-104619/</loc>
     <lastmod>2026-11-10T00:00:00+00:00</lastmod>
@@ -12,9 +39,6 @@
     <lastmod>2026-11-10T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://asimuntis.github.io/tags/libzypp/</loc>
-    <lastmod>2026-11-10T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://asimuntis.github.io/tags/linux/</loc>
     <lastmod>2026-11-10T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://asimuntis.github.io/tags/lpe/</loc>
@@ -26,16 +50,7 @@
     <loc>https://asimuntis.github.io/tags/packagekit/</loc>
     <lastmod>2026-11-10T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://asimuntis.github.io/tags/polkit/</loc>
-    <lastmod>2026-11-10T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://asimuntis.github.io/posts/</loc>
-    <lastmod>2026-11-10T00:00:00+00:00</lastmod>
-  </url><url>
     <loc>https://asimuntis.github.io/tags/suse/</loc>
-    <lastmod>2026-11-10T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://asimuntis.github.io/tags/</loc>
     <lastmod>2026-11-10T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://asimuntis.github.io/posts/suse-packagekit-zypp/</loc>

